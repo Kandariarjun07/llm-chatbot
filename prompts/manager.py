@@ -6,11 +6,13 @@ from prompts.assistant import (
     BIGDATA_ANALYSIS_STYLE,
     RESPONSE_STYLE,
     SQL_EXPLANATION_STYLE,
+    RESEARCH_STYLE,
 )
 from prompts.formatters import (
     BIGDATA_ANALYSIS_PROMPT,
     RAG_ANSWER_PROMPT,
     SQL_EXPLANATION_PROMPT,
+    WEB_SEARCH_PROMPT,
 )
 from prompts.system import SYSTEM_ROLE
 from prompts.tools import TOOL_SELECTION_PROMPT, TOOL_SELECTOR_ROLE
@@ -58,6 +60,16 @@ class PromptManager:
             "sql_explanation",
             system=SYSTEM_ROLE + "\n" + SQL_EXPLANATION_STYLE,
             user=SQL_EXPLANATION_PROMPT,
+        )
+        self.register(
+            "research",
+            system=SYSTEM_ROLE + "\n" + RESEARCH_STYLE,
+            user=RAG_ANSWER_PROMPT,
+        )
+        self.register(
+            "web_search",
+            system=SYSTEM_ROLE + "\nYou have access to real-time web search results. Use ONLY those results. Do not rely on training data.",
+            user=WEB_SEARCH_PROMPT,
         )
 
     def register(self, name: str, *, system: str, user: str) -> None:

@@ -60,12 +60,13 @@ def select_model_for_query(
     requested = requested_model or cheap_model
     is_auto = requested.lower() == "auto"
     is_premium = requested.lower() == premium_model.lower()
-    if not is_auto and not is_premium:
+
+    # If user explicitly picked a specific model (not Auto), respect it.
+    if not is_auto:
         return ModelRoutingDecision(requested, requested, False, "requested_model_kept")
 
     low_risk, reason = _is_low_risk(query, threshold)
     if low_risk:
         return ModelRoutingDecision(requested, cheap_model, requested != cheap_model, reason)
 
-    selected = premium_model if is_auto else requested
-    return ModelRoutingDecision(requested, selected, selected != requested, reason)
+    return ModelRoutingDecision(requested, premium_model, True, reason)

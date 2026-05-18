@@ -27,12 +27,49 @@ def build_rag_answer_prompt(
     context: str,
     language_instructions: str = "Respond in English with a concise, professional style.",
 ) -> list[dict]:
+    if not context or context == NO_CONTEXT_MESSAGE:
+        # Fall back to a normal conversational prompt without context constraints
+        return prompt_manager.compose(
+            "basic",
+            query=f"{language_instructions}\n\nUser Question:\n{user_query}",
+        )
+
+    language_instructions += "\nIf the provided context is weak or does not answer the question, explicitly say so and do not hallucinate."
     return prompt_manager.compose(
         "rag_answer",
+        user_query=user_query,
+        context=context,
+        language_instructions=language_instructions,
+    )
+
+
+def build_research_prompt(
+    user_query: str,
+    context: str,
+    language_instructions: str = "Respond in English with a thorough, professional style.",
+) -> list[dict]:
+    language_instructions += "\nIf the provided context is weak or does not answer the question, explicitly say so and do not hallucinate."
+    return prompt_manager.compose(
+        "research",
         user_query=user_query,
         context=context or NO_CONTEXT_MESSAGE,
         language_instructions=language_instructions,
     )
+
+
+def build_web_search_prompt(
+    user_query: str,
+    context: str,
+    language_instructions: str = "Respond in English with a thorough, professional style.",
+) -> list[dict]:
+    language_instructions += "\nIf the provided context is weak or does not answer the question, explicitly say so and do not hallucinate."
+    return prompt_manager.compose(
+        "web_search",
+        user_query=user_query,
+        context=context or NO_CONTEXT_MESSAGE,
+        language_instructions=language_instructions,
+    )
+
 
 def list_prompt_templates() -> list[str]:
     return prompt_manager.available_templates()

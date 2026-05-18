@@ -40,12 +40,28 @@ def _env_int(name: str, default: int) -> int:
 class AppSettings(BaseModel):
     groq_api_key: str | None = Field(default=None)
     gemini_api_key: str | None = Field(default=None)
+    together_api_key: str | None = Field(default=None)
+    deepgram_api_key: str | None = Field(default=None)
+    aicredits_api_key: str | None = Field(default=None)
+    cerebras_api_key: str | None = Field(default=None)
+    cerebras_model: str = Field(default="gpt-oss-120b")
+    aicredits_base_url: str = Field(default="https://api.aicredits.in/v1")
+    aicredits_model: str = Field(default="google/gemma-4-26b-a4b-it")
+    aicredits_inr_limit: float = Field(default=5.0)
+    aicredits_inr_per_1k_input_tokens: float = Field(default=0.005)
+    aicredits_inr_per_1k_output_tokens: float = Field(default=0.020)
     llm_provider: str = Field(default="vertex_gemini")
     vertex_ai_project_id: str | None = Field(default=None)
     vertex_ai_location: str = Field(default="us-central1")
     vertex_ai_gemini_model: str = Field(default="gemini-2.5-flash")
     gemini_api_model: str = Field(default="gemini-2.5-flash")
     groq_llama_model: str = Field(default="llama-3.1-8b-instant")
+    groq_think_model: str = Field(default="openai/gpt-oss-120b")
+    groq_compound_model: str = Field(default="openai/gpt-oss-safeguard-20b")
+    cloudflare_account_id: str | None = Field(default=None)
+    cloudflare_auth_token: str | None = Field(default=None)
+    cloudflare_model: str = Field(default="@cf/moonshotai/kimi-k2.6")
+    together_model: str = Field(default="mistralai/Mistral-Small-24B-Instruct-2501")
     auth_provider: str = Field(default="firebase")
     firebase_web_api_key: str | None = Field(default=None)
     firebase_project_id: str | None = Field(default=None)
@@ -64,6 +80,14 @@ class AppSettings(BaseModel):
     oidc_scopes: str = Field(default="openid profile email")
     oidc_allowed_domains: str | None = Field(default=None)
     oidc_allowed_emails: str | None = Field(default=None)
+
+    # ── SMTP (OTP email delivery) ────────────────────────────────
+    smtp_host: str | None = Field(default=None)
+    smtp_port: int = Field(default=587)
+    smtp_user: str | None = Field(default=None)
+    smtp_password: str | None = Field(default=None)
+    smtp_from: str | None = Field(default=None)
+    smtp_tls: bool = Field(default=True)
 
     gcp_project_id: str | None = Field(default=None)
     gcp_location: str = Field(default="US")
@@ -104,7 +128,7 @@ class AppSettings(BaseModel):
     data_access_default_sources: str | None = Field(default=None)
     max_input_tokens: int = Field(default=6000)
     max_context_tokens: int = Field(default=2500)
-    max_output_tokens: int = Field(default=800)
+    max_output_tokens: int = Field(default=4096, ge=256, le=8192)
     model_auto_routing_enabled: bool = Field(default=True)
     cheap_model_choice: str = Field(default="Llama")
     premium_model_choice: str = Field(default="Gemini")
@@ -129,6 +153,19 @@ class AppSettings(BaseModel):
         return cls(
             groq_api_key=os.getenv("GROQ_API_KEY") or None,
             gemini_api_key=os.getenv("GEMINI_API_KEY") or None,
+            together_api_key=os.getenv("TOGETHER_API_KEY") or None,
+            deepgram_api_key=os.getenv("DEEPGRAM_API_KEY") or None,
+            aicredits_api_key=os.getenv("AICREDITS_API_KEY") or None,
+            cerebras_api_key=os.getenv("CEREBRAS_API_KEY") or None,
+            cerebras_model=os.getenv("CEREBRAS_MODEL", "gpt-oss-120b"),
+            aicredits_base_url=os.getenv("AICREDITS_BASE_URL", "https://api.aicredits.in/v1"),
+            aicredits_model=os.getenv("AICREDITS_MODEL", "google/gemma-4-26b-a4b-it"),
+            cloudflare_account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID") or None,
+            cloudflare_auth_token=os.getenv("CLOUDFLARE_AUTH_TOKEN") or None,
+            cloudflare_model=os.getenv("CLOUDFLARE_MODEL", "@cf/moonshotai/kimi-k2.6"),
+            aicredits_inr_limit=float(os.getenv("AICREDITS_INR_LIMIT", "5.0")),
+            aicredits_inr_per_1k_input_tokens=float(os.getenv("AICREDITS_INR_PER_1K_INPUT", "0.005")),
+            aicredits_inr_per_1k_output_tokens=float(os.getenv("AICREDITS_INR_PER_1K_OUTPUT", "0.020")),
             llm_provider=os.getenv("LLM_PROVIDER", "vertex_gemini"),
             vertex_ai_project_id=(
                 os.getenv("VERTEX_AI_PROJECT_ID")
@@ -140,6 +177,9 @@ class AppSettings(BaseModel):
             vertex_ai_gemini_model=os.getenv("VERTEX_AI_GEMINI_MODEL", "gemini-2.5-flash"),
             gemini_api_model=os.getenv("GEMINI_API_MODEL", "gemini-2.5-flash"),
             groq_llama_model=os.getenv("GROQ_LLAMA_MODEL", "llama-3.1-8b-instant"),
+            groq_think_model=os.getenv("GROQ_THINK_MODEL", "openai/gpt-oss-120b"),
+            groq_compound_model=os.getenv("GROQ_COMPOUND_MODEL", "openai/gpt-oss-safeguard-20b"),
+            together_model=os.getenv("TOGETHER_MODEL", "mistralai/Mistral-Small-24B-Instruct-2501"),
             auth_provider=os.getenv("AUTH_PROVIDER", "firebase"),
             firebase_web_api_key=os.getenv("FIREBASE_WEB_API_KEY") or None,
             firebase_project_id=os.getenv("FIREBASE_PROJECT_ID") or None,
@@ -158,6 +198,12 @@ class AppSettings(BaseModel):
             oidc_scopes=os.getenv("OIDC_SCOPES", "openid profile email"),
             oidc_allowed_domains=os.getenv("OIDC_ALLOWED_DOMAINS") or None,
             oidc_allowed_emails=os.getenv("OIDC_ALLOWED_EMAILS") or None,
+            smtp_host=os.getenv("SMTP_HOST") or None,
+            smtp_port=int(os.getenv("SMTP_PORT", "587")),
+            smtp_user=os.getenv("SMTP_USER") or None,
+            smtp_password=os.getenv("SMTP_PASSWORD") or None,
+            smtp_from=os.getenv("SMTP_FROM") or None,
+            smtp_tls=_env_bool("SMTP_TLS", "true"),
             gcp_project_id=os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT") or None,
             gcp_location=os.getenv("GCP_LOCATION", "US"),
             cache_enabled=_env_bool("CACHE_ENABLED", "true"),
@@ -194,7 +240,7 @@ class AppSettings(BaseModel):
             data_access_default_sources=os.getenv("DATA_ACCESS_DEFAULT_SOURCES") or None,
             max_input_tokens=_env_int("MAX_INPUT_TOKENS", 6000),
             max_context_tokens=_env_int("MAX_CONTEXT_TOKENS", 2500),
-            max_output_tokens=_env_int("MAX_OUTPUT_TOKENS", 800),
+            max_output_tokens=_env_int("MAX_OUTPUT_TOKENS", 4096),
             model_auto_routing_enabled=_env_bool("MODEL_AUTO_ROUTING_ENABLED", "true"),
             cheap_model_choice=os.getenv("CHEAP_MODEL_CHOICE", "Llama"),
             premium_model_choice=os.getenv("PREMIUM_MODEL_CHOICE", "Gemini"),
@@ -218,10 +264,15 @@ class AppSettings(BaseModel):
         hidden = {
             "groq_api_key",
             "gemini_api_key",
+            "together_api_key",
+            "aicredits_api_key",
+            "cerebras_api_key",
+            "cloudflare_auth_token",
             "firebase_web_api_key",
             "appwrite_api_key",
             "oidc_client_secret",
             "redis_password",
+            "smtp_password",
         }
         return {
             key: ("***" if key in hidden and value else value)

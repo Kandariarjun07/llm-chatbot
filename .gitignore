@@ -1,13 +1,20 @@
 # Ignore virtual environment
 venv/
+.venv/
 
 # Python cache files
 __pycache__/
 *.pyc
 .rag_index/
 
+# Frontend dependencies
+frontend/node_modules/
+frontend/dist/
+
 # Environment variables (API keys)
 .env
+.env.local
+.env.*.local
 .streamlit/secrets.toml
 groq_key.txt
 gemini_key.txt
@@ -22,3 +29,12 @@ Thumbs.db
 .vscode/
 
 streamlit/session_cache.json
+
+# Multimodal workspace data (user uploads, vectors, parquet)
+workspace/
+
+# Runtime data (SQLite, logs, user preferences)
+data/chat_history.db
+data/user_preferences.json
+logs/
+*.log

@@ -1,0 +1,33 @@
+/*
+ * Optional: Drop licensed PP Editorial New files into /public/fonts/
+ * and they will automatically take precedence over Fraunces.
+ *
+ * Example files expected (uncomment @font-face blocks when provided):
+ *   /public/fonts/PPEditorialNew-Regular.woff2
+ *   /public/fonts/PPEditorialNew-Italic.woff2
+ *   /public/fonts/PPEditorialNew-Ultrabold.woff2
+ */
+
+/*
+@font-face {
+  font-family: 'PP Editorial New';
+  src: url('/fonts/PPEditorialNew-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PP Editorial New';
+  src: url('/fonts/PPEditorialNew-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'PP Editorial New';
+  src: url('/fonts/PPEditorialNew-Ultrabold.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+*/
