@@ -65,6 +65,7 @@ interface DiagramState {
   deleteEdge: (id: string) => void;
   autoArrange: (orientation?: 'TD' | 'LR') => void;
   syncMermaidToGraph: (mermaidCode: string) => void;
+  clearCanvas: () => void;
 
   // Undo / Redo
   pushHistory: () => void;
@@ -539,6 +540,18 @@ export const useDiagramStore = create<DiagramState>((set, get) => {
         diagramType: dir === 'LR' ? 'flowchart-lr' : 'flowchart'
       });
       _rebuildMermaid();
+    },
+
+    clearCanvas: () => {
+      get().pushHistory();
+      set({
+        nodes: [],
+        edges: [],
+        mermaidCode: 'flowchart TD',
+        analysis: null,
+        parsingLogs: 'Canvas cleared. Started fresh.'
+      });
+      get().saveActiveDiagram();
     },
 
     syncMermaidToGraph: (code) => {

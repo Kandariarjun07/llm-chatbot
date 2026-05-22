@@ -37,9 +37,12 @@ import {
   FloppyDiskBack,
   FileCode,
   Compass,
+  Hand,
+  CursorClick,
 } from '@phosphor-icons/react';
 
 import { useDiagramStore } from '../store/diagramStore';
+import { useThemeStore } from '../store/themeStore';
 import { CanonicalNode } from '../lib/diagramParser';
 
 // ── Custom Node Configuration ────────────────────────────────────────────────
@@ -140,6 +143,7 @@ const nodeTypes = {
 
 export default function Architect() {
   const store = useDiagramStore();
+  const theme = useThemeStore(s => s.theme);
 
   const [activeTab, setActiveTab] = useState<'templates' | 'saves' | 'import'>('templates');
   const [rightTab, setRightTab] = useState<'copilot' | 'audit'>('copilot');
@@ -158,6 +162,9 @@ export default function Architect() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const [showDeveloperConsole, setShowDeveloperConsole] = useState(false);
   const [nodeAddingOpen, setNodeAddingOpen] = useState(false);
+
+  // Box Selection and Pan Canvas Drag Modes
+  const [dragMode, setDragMode] = useState<'pan' | 'select'>('pan');
 
   // Local file loader ref
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -187,25 +194,27 @@ export default function Architect() {
   }, [store.nodes]);
 
   const reactFlowEdges = useMemo(() => {
-    return store.edges.map(e => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      label: e.label,
-      type: 'smoothstep',
-      animated: e.style === 'dotted',
-      style: {
-        stroke: e.style === 'thick' ? 'var(--accent)' : 'var(--border-strong)',
-        strokeWidth: e.style === 'thick' ? 3 : 1.5
-      },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: 'var(--border-strong)',
-        width: 16,
-        height: 16
-      }
-    }));
-  }, [store.edges]);
+    return store.edges
+      .filter(e => store.nodes.some(n => n.id === e.source) && store.nodes.some(n => n.id === e.target))
+      .map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        label: e.label,
+        type: 'smoothstep',
+        animated: e.style === 'dotted',
+        style: {
+          stroke: e.style === 'thick' ? 'var(--accent)' : 'var(--border-strong)',
+          strokeWidth: e.style === 'thick' ? 3 : 1.5
+        },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: 'var(--border-strong)',
+          width: 16,
+          height: 16
+        }
+      }));
+  }, [store.edges, store.nodes]);
 
   // Canvas callbacks
   const onNodesChange = useCallback((changes: any) => {
@@ -585,6 +594,28 @@ export default function Architect() {
             </button>
             <div className="h-4 w-px bg-[var(--border)] mx-1" />
 
+            {/* Canvas Interaction Modes (Pan / Multi-Select Toggle) */}
+            <div className="flex items-center border rounded bg-[var(--bg)] p-0.5" style={{ borderColor: 'var(--border)' }}>
+              <button
+                onClick={() => setDragMode('pan')}
+                className={`p-1 rounded transition-colors ${dragMode === 'pan' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]'}`}
+                style={dragMode === 'pan' ? { color: 'var(--bg-elevated)' } : {}}
+                title="Pan Mode (Drag canvas to move, hold Shift to select multiple)"
+              >
+                <Hand size={14} />
+              </button>
+              <button
+                onClick={() => setDragMode('select')}
+                className={`p-1 rounded transition-colors ${dragMode === 'select' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]'}`}
+                style={dragMode === 'select' ? { color: 'var(--bg-elevated)' } : {}}
+                title="Box Select Mode (Drag canvas to draw selection box and select multiple)"
+              >
+                <CursorClick size={14} />
+              </button>
+            </div>
+
+            <div className="h-4 w-px bg-[var(--border)] mx-1" />
+
             <button
               onClick={() => store.autoArrange('TD')}
               className="px-2.5 py-1 text-xs rounded hover:bg-[var(--bg)] flex items-center gap-1 border"
@@ -600,6 +631,20 @@ export default function Architect() {
               title="Auto Layout Left-to-Right"
             >
               <TreeStructure size={14} className="rotate-90" /> Align LR
+            </button>
+
+            {/* Clear Canvas Action */}
+            <button
+              onClick={() => {
+                if (window.confirm("Are you sure you want to clear the entire canvas? This will delete all nodes and edges from this draft workspace.")) {
+                  store.clearCanvas();
+                }
+              }}
+              className="px-2.5 py-1 text-xs rounded hover:bg-[var(--danger-soft)] text-[var(--danger)] hover:text-white flex items-center gap-1 border hover:bg-[var(--danger)] transition-all ml-1"
+              style={{ borderColor: 'var(--border)' }}
+              title="Delete all nodes and edges from active canvas"
+            >
+              <TrashSimple size={14} /> Clear Canvas
             </button>
 
             <div className="h-4 w-px bg-[var(--border)] mx-1" />
@@ -683,9 +728,13 @@ export default function Architect() {
               onNodesChange={onNodesChange}
               onConnect={onConnect}
               nodeTypes={nodeTypes}
+              colorMode={theme}
               fitView
               snapToGrid
               snapGrid={[15, 15]}
+              panOnDrag={dragMode === 'pan'}
+              selectionOnDrag={dragMode === 'select'}
+              selectionKeyCode={dragMode === 'select' ? null : 'Shift'}
             >
               <Background gap={15} size={1} color="var(--border-strong)" />
               <Controls className="!bg-[var(--bg-elevated)] !border-[var(--border)] !shadow-lg" />

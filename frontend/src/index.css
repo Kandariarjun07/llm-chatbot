@@ -214,4 +214,41 @@ select, option {
   color: #f5f2e9 !important;
 }
 
+/* React Flow Visual Canvas Dark Mode Override Controls */
+.dark .react-flow__controls {
+  background-color: var(--bg-elevated) !important;
+  border: 1px solid var(--border-strong) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+.dark .react-flow__controls-button {
+  background-color: var(--bg-elevated) !important;
+  color: var(--text) !important;
+  border-bottom: 1px solid var(--border-strong) !important;
+  transition: all 0.2s ease !important;
+}
+
+.dark .react-flow__controls-button:hover {
+  background-color: var(--accent-soft) !important;
+  color: var(--accent) !important;
+}
+
+.dark .react-flow__controls-button svg {
+  fill: var(--text) !important;
+  stroke: var(--text) !important;
+}
+
+.dark .react-flow__controls-button:hover svg {
+  fill: var(--accent) !important;
+  stroke: var(--accent) !important;
+}
+
+/* Style MiniMap correctly for both modes */
+.react-flow__minimap {
+  background-color: var(--bg-elevated) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+}
+
 
