@@ -1169,6 +1169,8 @@ function PlusMenuItem({
   )
 }
 
+import MermaidRenderer from '../components/MermaidRenderer'
+
 function PreWithCopy({ children, ...props }: any) {
   const preRef = useRef<HTMLPreElement>(null)
   const [copied, setCopied] = useState(false)
@@ -1181,6 +1183,32 @@ function PreWithCopy({ children, ...props }: any) {
       setTimeout(() => setCopied(false), 2000)
     } catch {
       // ignore
+    }
+  }
+
+  // Intercept and render Mermaid blocks visually
+  const codeChild = React.Children.toArray(children).find(
+    (child: any) => child && child.type === 'code'
+  ) as any
+
+  if (codeChild && codeChild.props) {
+    const className = codeChild.props.className || ''
+    const codeContent = React.Children.toArray(codeChild.props.children).join('').trim()
+    const isMermaid = 
+      className.includes('language-mermaid') || 
+      className.includes('mermaid') ||
+      codeContent.startsWith('flowchart ') ||
+      codeContent.startsWith('graph ') ||
+      codeContent.startsWith('sequenceDiagram') ||
+      codeContent.startsWith('stateDiagram') ||
+      codeContent.startsWith('classDiagram')
+
+    if (isMermaid) {
+      return (
+        <div className="my-4 w-full">
+          <MermaidRenderer code={codeContent} inline={true} />
+        </div>
+      )
     }
   }
 

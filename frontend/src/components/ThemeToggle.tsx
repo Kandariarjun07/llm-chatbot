@@ -28,7 +28,7 @@ export default function ThemeToggle({ compact = false }: ThemeToggleProps) {
       onClick={toggle}
       aria-label="Toggle theme"
       className="flex items-center justify-between w-full px-3 py-2 rounded-lg text-sm
-                 transition-all hover:bg-[color:var(--accent-soft)]"
+                 transition-all hover:bg-[var(--accent-soft)]"
       style={{ color: 'var(--text-muted)' }}
     >
       <span className="flex items-center gap-2.5">

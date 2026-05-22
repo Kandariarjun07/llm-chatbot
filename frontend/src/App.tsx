@@ -8,6 +8,7 @@ import ResetPassword from './pages/ResetPassword'
 import Chat from './pages/Chat'
 import Images from './pages/Images'
 import Sheets from './pages/Sheets'
+import Architect from './pages/Architect'
 import Usage from './pages/Usage'
 import Settings from './pages/Settings'
 
@@ -61,6 +62,14 @@ export default function App() {
             element={
               <ProtectedRoute scope="sheets">
                 <Sheets />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/architect"
+            element={
+              <ProtectedRoute scope="architect">
+                <Architect />
               </ProtectedRoute>
             }
           />

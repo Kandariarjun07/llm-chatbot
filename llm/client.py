@@ -101,7 +101,6 @@ except Exception:
     gemini_client = None
 
 
-@retry(wait=wait_exponential(multiplier=1, min=1, max=8), stop=stop_after_attempt(3), reraise=True)
 def _call_groq(user_input: str, temperature: float = 0.2, max_output_tokens: int | None = None, model: str | None = None, system: str | None = None) -> str:
     settings = get_settings()
     messages: list[dict[str, str]] = []
@@ -125,8 +124,7 @@ def _call_groq(user_input: str, temperature: float = 0.2, max_output_tokens: int
     return response.choices[0].message.content
 
 
-@retry(wait=wait_exponential(multiplier=1, min=1, max=8), stop=stop_after_attempt(3), reraise=True)
-def _call_gemini(user_input: str, temperature: float = 0.2, max_output_tokens: int | None = None) -> str:
+def _call_gemini(user_input: str, temperature: float = 0.2, max_output_tokens: int | None = None, system: str | None = None) -> str:
     settings = get_settings()
     if not gemini_client:
         raise RuntimeError("Gemini API key not configured")
@@ -134,6 +132,8 @@ def _call_gemini(user_input: str, temperature: float = 0.2, max_output_tokens: i
     config_dict = {"temperature": temperature}
     if max_output_tokens:
         config_dict["max_output_tokens"] = max_output_tokens
+    if system:
+        config_dict["system_instruction"] = system
         
     response = gemini_client.models.generate_content(
         model=settings.gemini_api_model,
@@ -144,11 +144,11 @@ def _call_gemini(user_input: str, temperature: float = 0.2, max_output_tokens: i
     return response.text
 
 
-@retry(wait=wait_exponential(multiplier=1, min=1, max=8), stop=stop_after_attempt(3), reraise=True)
 def _call_vertex_gemini(
     user_input: str,
     temperature: float = 0.2,
     max_output_tokens: int | None = None,
+    system: str | None = None,
 ) -> str:
     settings = get_settings()
     if vertexai is None or VertexGenerativeModel is None:
@@ -156,8 +156,33 @@ def _call_vertex_gemini(
     if not settings.vertex_ai_project_id:
         raise RuntimeError("VERTEX_AI_PROJECT_ID or GCP_PROJECT_ID is required for Vertex AI Gemini.")
 
+    # Fail fast if GCP credentials are not available
+    import os
+    import platform
+    adc_env = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    has_adc = False
+    if adc_env and os.path.exists(adc_env):
+        has_adc = True
+    else:
+        if platform.system() == "Windows":
+            default_path = os.path.expandvars(r"%APPDATA%\gcloud\application_default_credentials.json")
+        else:
+            default_path = os.path.expanduser("~/.config/gcloud/application_default_credentials.json")
+        if os.path.exists(default_path):
+            has_adc = True
+            
+    if not has_adc:
+        raise RuntimeError("Google Application Default Credentials (ADC) are not configured. Bypassing Vertex AI to prevent 45s metadata hang.")
+
+    import google.auth
+    from google.auth.exceptions import DefaultCredentialsError
+    try:
+        google.auth.default()
+    except DefaultCredentialsError as e:
+        raise RuntimeError(f"Google Application Default Credentials (ADC) are not configured. Cannot use Vertex AI: {e}")
+
     vertexai.init(project=settings.vertex_ai_project_id, location=settings.vertex_ai_location)
-    model = VertexGenerativeModel(settings.vertex_ai_gemini_model)
+    model = VertexGenerativeModel(settings.vertex_ai_gemini_model, system_instruction=system)
     generation_config = {"temperature": temperature}
     if max_output_tokens:
         generation_config["max_output_tokens"] = max_output_tokens
@@ -337,6 +362,19 @@ def chat_completion(
 
     try:
         if model_choice == "Gemini":
+            if GEMINI_API_KEY:
+                try:
+                    return call_with_breaker(
+                        "gemini",
+                        _call_gemini,
+                        user_input,
+                        temperature=temperature,
+                        max_output_tokens=max_output_tokens,
+                        system=system,
+                    )
+                except (Exception, CircuitOpenError):
+                    pass
+
             if settings.llm_provider.lower() in {"vertex_gemini", "vertex", "vertex_ai", "vertex-ai"}:
                 try:
                     return call_with_breaker(
@@ -345,30 +383,34 @@ def chat_completion(
                         user_input,
                         temperature=temperature,
                         max_output_tokens=max_output_tokens,
+                        system=system,
                     )
                 except (Exception, CircuitOpenError):
                     pass
 
-            try:
-                return call_with_breaker(
-                    "gemini",
-                    _call_gemini,
-                    user_input,
-                    temperature=temperature,
-                    max_output_tokens=max_output_tokens,
-                )
-            except (Exception, CircuitOpenError):
-                # Gemini is misbehaving (or breaker is open) — fall back
-                # to Groq immediately instead of waiting for the retry
-                # decorator to time out.
-                return call_with_breaker(
-                    "groq",
-                    _call_groq,
-                    user_input,
-                    temperature=temperature,
-                    max_output_tokens=max_output_tokens,
-                    system=system,
-                )
+            # If GEMINI_API_KEY wasn't tried yet (e.g. not set but default provider is vertex which failed):
+            if not GEMINI_API_KEY:
+                try:
+                    return call_with_breaker(
+                        "gemini",
+                        _call_gemini,
+                        user_input,
+                        temperature=temperature,
+                        max_output_tokens=max_output_tokens,
+                        system=system,
+                    )
+                except (Exception, CircuitOpenError):
+                    pass
+
+            # Groq fallback
+            return call_with_breaker(
+                "groq",
+                _call_groq,
+                user_input,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+                system=system,
+            )
 
         if model_choice == "Llama":
             return call_with_breaker(
@@ -459,7 +501,7 @@ def _stream_groq(user_input: str, temperature: float = 0.2, max_output_tokens: i
             yield delta
 
 
-def _stream_gemini(user_input: str, temperature: float = 0.2, max_output_tokens: int | None = None):
+def _stream_gemini(user_input: str, temperature: float = 0.2, max_output_tokens: int | None = None, system: str | None = None):
     """Yield text chunks from Gemini API streaming."""
     settings = get_settings()
     if not gemini_client:
@@ -468,6 +510,8 @@ def _stream_gemini(user_input: str, temperature: float = 0.2, max_output_tokens:
     config_dict = {"temperature": temperature}
     if max_output_tokens:
         config_dict["max_output_tokens"] = max_output_tokens
+    if system:
+        config_dict["system_instruction"] = system
 
     stream = gemini_client.models.generate_content_stream(
         model=settings.gemini_api_model,
@@ -635,6 +679,7 @@ def chat_completion_stream(
     temperature: float = 0.2,
     max_output_tokens: int | None = None,
     max_input_tokens: int | None = None,
+    system: str | None = None,
 ):
     """Generator that yields text deltas from the active LLM."""
     settings = get_settings()
@@ -646,11 +691,11 @@ def chat_completion_stream(
         if model_choice == "Gemini":
             # Prefer Gemini API streaming; fall back to Groq if unavailable
             try:
-                yield from _stream_gemini(user_input, temperature=temperature, max_output_tokens=max_output_tokens)
+                yield from _stream_gemini(user_input, temperature=temperature, max_output_tokens=max_output_tokens, system=system)
                 return
             except Exception:
                 pass
-            yield from _stream_groq(user_input, temperature=temperature, max_output_tokens=max_output_tokens)
+            yield from _stream_groq(user_input, temperature=temperature, max_output_tokens=max_output_tokens, system=system)
             return
 
         if model_choice == "Llama":
@@ -708,14 +753,19 @@ async def _astream_groq(
     temperature: float = 0.2,
     max_output_tokens: int | None = None,
     model: str | None = None,
+    system: str | None = None,
 ):
     """Async generator yielding text chunks from Groq."""
     if async_groq_client is None:
         raise RuntimeError("Async Groq client not initialized.")
     settings = get_settings()
+    messages: list[dict[str, str]] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": user_input})
     request: dict[str, Any] = {
         "model": model or settings.groq_llama_model,
-        "messages": [{"role": "user", "content": user_input}],
+        "messages": messages,
         "temperature": temperature,
         "stream": True,
     }
@@ -744,6 +794,7 @@ async def achat_completion_stream(
     temperature: float = 0.2,
     max_output_tokens: int | None = None,
     max_input_tokens: int | None = None,
+    system: str | None = None,
 ):
     """Async generator that yields text deltas from the active LLM.
 
@@ -762,6 +813,7 @@ async def achat_completion_stream(
                 user_input,
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
+                system=system,
             ):
                 yield delta
             return
@@ -772,6 +824,7 @@ async def achat_completion_stream(
                 temperature=temperature,
                 max_output_tokens=max_output_tokens,
                 model=settings.groq_think_model,
+                system=system,
             ):
                 yield delta
             return
@@ -788,6 +841,7 @@ async def achat_completion_stream(
                             user_input,
                             temperature=temperature,
                             max_output_tokens=max_output_tokens,
+                            system=system,
                         )
                     )
 
@@ -800,6 +854,7 @@ async def achat_completion_stream(
                     user_input,
                     temperature=temperature,
                     max_output_tokens=max_output_tokens,
+                    system=system,
                 ):
                     yield delta
                 return
@@ -820,6 +875,7 @@ async def achat_completion_stream(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
             max_input_tokens=max_input_tokens,
+            system=system,
         )
         while True:
             has_delta, delta = await _asyncio.to_thread(_next, sync_iter)

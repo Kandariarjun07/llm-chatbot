@@ -23,6 +23,7 @@ from api.upload_routes import router as upload_router
 from api.multimodal_routes import router as multimodal_router
 from api.sheets_routes import router as sheets_router
 from api.transcribe_routes import router as transcribe_router
+from api.diagram_routes import router as diagram_router
 from app.cache import answer_cache
 from app.config import get_settings
 from app.mode_routing import mode_to_model_choice
@@ -122,6 +123,7 @@ app.include_router(upload_router)
 app.include_router(multimodal_router)
 app.include_router(sheets_router)
 app.include_router(transcribe_router)
+app.include_router(diagram_router)
 
 
 @app.get("/health")

@@ -565,3 +565,44 @@ export const transcribeApi = {
   },
 }
 
+// ── Diagram & Architecture Studio API ──────────────────────────────
+
+export interface DiagramGeneratePayload {
+  prompt: string
+  diagram_type?: string
+  file_content?: string
+  file_name?: string
+  existing_mermaid?: string
+}
+
+export interface DiagramAnalyzePayload {
+  mermaid_code: string
+  nodes?: any[]
+  edges?: any[]
+}
+
+export interface DiagramResponse {
+  id: string
+  title: string
+  diagramType: string
+  createdAt: number
+  updatedAt: number
+  nodes: any[]
+  edges: any[]
+  mermaidCode: string
+  metadata: any
+}
+
+export const diagramApi = {
+  generate: (payload: DiagramGeneratePayload) =>
+    api.post('/diagram/generate', payload),
+  analyze: (payload: DiagramAnalyzePayload) =>
+    api.post('/diagram/analyze', payload),
+  history: {
+    list: () => api.get<DiagramResponse[]>('/diagram/history'),
+    get: (id: string) => api.get<DiagramResponse>(`/diagram/history/${id}`),
+    save: (diagram: DiagramResponse) => api.post('/diagram/history', diagram),
+    delete: (id: string) => api.delete(`/diagram/history/${id}`),
+  },
+}
+

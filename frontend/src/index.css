@@ -203,4 +203,15 @@
   }
 }
 
+/* Style native select and options globally to prevent contrast issues on Windows browsers */
+select, option {
+  background-color: #ffffff !important;
+  color: #14110a !important;
+}
+
+.dark select, .dark option {
+  background-color: #141416 !important;
+  color: #f5f2e9 !important;
+}
+
 

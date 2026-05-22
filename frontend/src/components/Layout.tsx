@@ -15,6 +15,7 @@ import {
   PencilSimple,
   Table,
   ChartPieSlice,
+  ShareNetwork,
 } from '@phosphor-icons/react'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import ThemeToggle from './ThemeToggle'
@@ -23,6 +24,7 @@ const navItems = [
   { to: '/chat', icon: ChatTeardropText, label: 'Chat' },
   { to: '/images', icon: ImageSquare, label: 'Images' },
   { to: '/sheets', icon: Table, label: 'Sheets' },
+  { to: '/architect', icon: ShareNetwork, label: 'Diagrams' },
   { to: '/usage', icon: ChartPieSlice, label: 'Usage' },
   { to: '/settings', icon: Gear, label: 'Settings' },
 ]
@@ -124,7 +126,7 @@ function ConversationRow({
           e.stopPropagation()
           setMenuOpen((v) => !v)
         }}
-        className="p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[color:var(--border-strong)]"
+        className="p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[var(--border-strong)]"
         style={{ color: 'var(--text-muted)' }}
         aria-label="Conversation menu"
       >
@@ -145,7 +147,7 @@ function ConversationRow({
               setEditing(true)
               setMenuOpen(false)
             }}
-            className="flex items-center gap-2 w-full px-2.5 py-1.5 text-[12px] rounded-md hover:bg-[color:var(--accent-soft)]"
+            className="flex items-center gap-2 w-full px-2.5 py-1.5 text-[12px] rounded-md hover:bg-[var(--accent-soft)]"
             style={{ color: 'var(--text)' }}
           >
             <PencilSimple size={13} /> Rename
@@ -155,7 +157,7 @@ function ConversationRow({
               onDelete()
               setMenuOpen(false)
             }}
-            className="flex items-center gap-2 w-full px-2.5 py-1.5 text-[12px] rounded-md hover:bg-[color:var(--danger-soft)]"
+            className="flex items-center gap-2 w-full px-2.5 py-1.5 text-[12px] rounded-md hover:bg-[var(--danger-soft)]"
             style={{ color: 'var(--danger)' }}
           >
             <TrashSimple size={13} /> Delete
