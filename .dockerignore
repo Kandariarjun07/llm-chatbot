@@ -1,4 +1,5 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
 .git/
@@ -8,3 +9,15 @@ groq_key.txt
 gemini_key.txt
 snti-chatbot-sa.json
 *service-account*.json
+frontend/node_modules/
+frontend/dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.vscode/
+.idea/
+workspace/
+logs/
+data/
+.rag_index/

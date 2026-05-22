@@ -14,6 +14,7 @@ except ImportError:
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from api.auth_routes import get_current_user, router as auth_router
@@ -348,3 +349,25 @@ async def stream_test():
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ── Static frontend (production) ─────────────────────────────────
+# Serve the built React app from frontend/dist.  API routes above take
+# precedence.  All unmatched paths fall back to index.html so React Router
+# client-side routes work after a hard refresh.
+_frontend_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend", "dist")
+if os.path.isdir(_frontend_dist):
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    from starlette.responses import FileResponse
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _spa_fallback(_request: Request, _exc: StarletteHTTPException):
+        # Only catch 404s for non-API paths and serve index.html.
+        path = _request.url.path
+        if not path.startswith(("/auth", "/chat", "/upload", "/images", "/sheets", "/transcribe", "/diagram", "/limits", "/config", "/prompts", "/cache", "/health")):
+            index_path = os.path.join(_frontend_dist, "index.html")
+            if os.path.isfile(index_path):
+                return FileResponse(index_path)
+        raise _exc
+
+    app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="static")

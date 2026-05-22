@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import mermaid from 'mermaid';
 import {
   ReactFlow,
   MiniMap,
@@ -39,6 +40,7 @@ import {
   Compass,
   Hand,
   CursorClick,
+  Images,
 } from '@phosphor-icons/react';
 
 import { useDiagramStore } from '../store/diagramStore';
@@ -281,28 +283,123 @@ export default function Architect() {
     setImportFileName('');
   };
 
-  // Vector SVG Downloader
-  const exportSvgFile = () => {
-    const viewport = document.querySelector('.react-flow__viewport') as SVGGraphicsElement;
-    if (!viewport) return;
+  // Standalone SVG export via Mermaid (inlines all styles so it never opens blank)
+  const exportSvgFile = async () => {
+    const code = store.mermaidCode?.trim();
+    if (!code) return;
 
-    const svgHtml = new XMLSerializer().serializeToString(viewport);
-    const blob = new Blob([
-      `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="-100 -50 1400 1000" style="background:var(--bg)">
-        <style>
-          .react-flow__edge-path { fill: none; }
-          input { border: 0; background: transparent; }
-        </style>
-        ${svgHtml}
-      </svg>`
-    ], { type: 'image/svg+xml;charset=utf-8' });
+    try {
+      mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+      const renderId = `svg-export-${Math.random().toString(36).slice(2, 9)}`;
+      const { svg } = await mermaid.render(renderId, code);
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${store.title.toLowerCase().replace(/\s+/g, '_')}_architecture.svg`;
-    link.click();
-    URL.revokeObjectURL(url);
+      // Ensure standalone compatibility: add XML prolog and guarantee xmlns
+      let standalone = svg;
+      if (!standalone.includes('xmlns="http://www.w3.org/2000/svg"')) {
+        standalone = standalone.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n${standalone}`;
+
+      const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${store.title.toLowerCase().replace(/\s+/g, '_')}_architecture.svg`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('SVG export failed:', err);
+      alert('Failed to export SVG. Make sure the diagram has valid Mermaid code.');
+    }
+  };
+
+  // HD PNG export: render Mermaid SVG to canvas at 3x scale
+  const exportPngFile = async () => {
+    const code = store.mermaidCode?.trim();
+    if (!code) return;
+
+    try {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: 'default',
+        securityLevel: 'loose',
+        flowchart: { htmlLabels: false, useMaxWidth: true },
+      });
+
+      const renderId = `png-export-${Math.random().toString(36).slice(2, 9)}`;
+      const { svg } = await mermaid.render(renderId, code);
+
+      // Sanitize: strip foreignObject / external references that taint canvas
+      let standalone = svg
+        .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, '')
+        .replace(/@import\s+url\([^)]+\);?/gi, '');
+
+      if (!standalone.includes('xmlns="http://www.w3.org/2000/svg"')) {
+        standalone = standalone.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+
+      // Parse viewBox to set explicit width/height so the <img> doesn't
+      // default to 300x150 and clip the diagram.
+      const parser = new DOMParser();
+      const svgDoc = parser.parseFromString(standalone, 'image/svg+xml');
+      const svgEl = svgDoc.querySelector('svg');
+      let svgW = 0;
+      let svgH = 0;
+      const vb = svgEl?.getAttribute('viewBox');
+      if (vb) {
+        const parts = vb.split(/\s+/).map(Number);
+        svgW = parts[2];
+        svgH = parts[3];
+      } else {
+        svgW = parseFloat(svgEl?.getAttribute('width') || '0');
+        svgH = parseFloat(svgEl?.getAttribute('height') || '0');
+      }
+      if (svgW > 0 && svgH > 0) {
+        svgEl?.setAttribute('width', String(svgW));
+        svgEl?.setAttribute('height', String(svgH));
+      }
+      const serialized = new XMLSerializer().serializeToString(svgDoc);
+
+      const xml = `<?xml version="1.0" encoding="UTF-8"?>\n${serialized}`;
+      const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+      const svgUrl = URL.createObjectURL(svgBlob);
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const scale = 3;
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth * scale;
+        canvas.height = img.naturalHeight * scale;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0);
+
+        canvas.toBlob((blob) => {
+          if (!blob) return;
+          const pngUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = pngUrl;
+          link.download = `${store.title.toLowerCase().replace(/\s+/g, '_')}_architecture_hd.png`;
+          link.click();
+          URL.revokeObjectURL(pngUrl);
+          URL.revokeObjectURL(svgUrl);
+        }, 'image/png');
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(svgUrl);
+        alert('Failed to rasterize diagram for PNG export.');
+      };
+      img.src = svgUrl;
+    } catch (err) {
+      console.error('PNG export failed:', err);
+      alert('Failed to export PNG. Make sure the diagram has valid Mermaid code.');
+    }
   };
 
   // JSON Downloader
@@ -922,7 +1019,7 @@ export default function Architect() {
                 <p className="text-[10px] uppercase font-bold tracking-wider opacity-60">Export Deliverables</p>
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={exportSvgFile}
+                    onClick={() => void exportSvgFile()}
                     disabled={!store.activeId}
                     className="py-2 border rounded text-xs hover:bg-[var(--bg)] flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 text-[var(--text)]"
                     style={{ borderColor: 'var(--border)' }}
@@ -930,14 +1027,22 @@ export default function Architect() {
                     <Export size={13} /> SVG File
                   </button>
                   <button
-                    onClick={exportJsonFile}
+                    onClick={() => void exportPngFile()}
                     disabled={!store.activeId}
                     className="py-2 border rounded text-xs hover:bg-[var(--bg)] flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 text-[var(--text)]"
                     style={{ borderColor: 'var(--border)' }}
                   >
-                    <DownloadSimple size={13} /> Graph JSON
+                    <Images size={13} /> HD PNG
                   </button>
                 </div>
+                <button
+                  onClick={exportJsonFile}
+                  disabled={!store.activeId}
+                  className="w-full py-2 text-xs rounded border hover:bg-[var(--bg)] transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50 text-[var(--text)]"
+                  style={{ borderColor: 'var(--border)' }}
+                >
+                  <DownloadSimple size={13} /> Graph JSON
+                </button>
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(store.mermaidCode);

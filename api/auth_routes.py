@@ -367,14 +367,14 @@ class MeResponse(BaseModel):
 # ───────────────────── routes ─────────────────────
 
 @router.post("/signin", response_model=AuthResponse, dependencies=[Depends(RateLimit("auth.signin", per_minute=5, per_ip=True))])
-def signin(body: SignInBody) -> AuthResponse:
+async def signin(body: SignInBody) -> AuthResponse:
     data = _firebase_request(
         "accounts:signInWithPassword",
         {"email": body.email, "password": body.password, "returnSecureToken": True},
     )
     
     user_id = data.get("localId")
-    if not user_id or not is_user_verified(user_id):
+    if not user_id or not await is_user_verified(user_id):
         # Auto-send OTP for users who haven't completed OTP verification
         send_otp(body.email)
         raise HTTPException(
@@ -443,7 +443,7 @@ class VerifyOtpBody(BaseModel):
     otp: str = Field(..., min_length=6, max_length=6)
 
 @router.post("/verify-otp", response_model=AuthResponse)
-def verify_otp(body: VerifyOtpBody) -> AuthResponse:
+async def verify_otp(body: VerifyOtpBody) -> AuthResponse:
     # TTL is enforced by the store — a missing entry means expired OR
     # never-issued; we present the same message either way so we don't
     # leak which one it is.
@@ -477,7 +477,7 @@ def verify_otp(body: VerifyOtpBody) -> AuthResponse:
 
     user_id = data.get("localId")
     if user_id:
-        mark_user_verified(user_id)
+        await mark_user_verified(user_id)
 
     # Remove used OTP
     otp_store.delete_otp(body.email)

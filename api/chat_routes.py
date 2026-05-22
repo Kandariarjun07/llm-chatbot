@@ -1,4 +1,3 @@
-import asyncio
 import time
 from typing import Any
 
@@ -6,7 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth_routes import get_current_user
-from app.db import delete_conversation, get_conversations, upsert_conversation, clear_conversations
+from app.db import (
+    delete_conversation,
+    get_conversations,
+    upsert_conversation,
+    clear_conversations,
+)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -45,14 +49,14 @@ async def list_history(user: dict[str, Any] = Depends(get_current_user)) -> list
     cached = _history_cache.get(uid)
     if cached and now - cached[1] < _HISTORY_CACHE_TTL:
         return cached[0]
-    rows = await asyncio.to_thread(get_conversations, uid)
+    rows = await get_conversations(uid)
     _history_cache[uid] = (rows, now)
     return rows
 
 
 @router.post("/history")
-def save_history(body: UpsertBody, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
-    upsert_conversation(
+async def save_history(body: UpsertBody, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
+    await upsert_conversation(
         user["user_id"],
         {
             "id": body.id,
@@ -67,15 +71,15 @@ def save_history(body: UpsertBody, user: dict[str, Any] = Depends(get_current_us
 
 
 @router.delete("/history/{conv_id}")
-def delete_history(conv_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
-    if delete_conversation(user["user_id"], conv_id):
+async def delete_history(conv_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
+    if await delete_conversation(user["user_id"], conv_id):
         _history_cache.pop(user["user_id"], None)
         return {"status": "deleted"}
     raise HTTPException(status_code=404, detail="Conversation not found")
 
 
 @router.delete("/history")
-def clear_history(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
-    clear_conversations(user["user_id"])
+async def clear_history(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
+    await clear_conversations(user["user_id"])
     _history_cache.pop(user["user_id"], None)
     return {"status": "cleared"}

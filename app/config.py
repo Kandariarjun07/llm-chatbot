@@ -81,6 +81,9 @@ class AppSettings(BaseModel):
     oidc_allowed_domains: str | None = Field(default=None)
     oidc_allowed_emails: str | None = Field(default=None)
 
+    # ── Supabase / PostgreSQL ────────────────────────────────────
+    supabase_db_url: str | None = Field(default=None)
+
     # ── SMTP (OTP email delivery) ────────────────────────────────
     smtp_host: str | None = Field(default=None)
     smtp_port: int = Field(default=587)
@@ -198,6 +201,7 @@ class AppSettings(BaseModel):
             oidc_scopes=os.getenv("OIDC_SCOPES", "openid profile email"),
             oidc_allowed_domains=os.getenv("OIDC_ALLOWED_DOMAINS") or None,
             oidc_allowed_emails=os.getenv("OIDC_ALLOWED_EMAILS") or None,
+            supabase_db_url=os.getenv("SUPABASE_DB_URL") or None,
             smtp_host=os.getenv("SMTP_HOST") or None,
             smtp_port=int(os.getenv("SMTP_PORT", "587")),
             smtp_user=os.getenv("SMTP_USER") or None,

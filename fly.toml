@@ -1,0 +1,44 @@
+# Fly.io deployment config for SNTI AI Chatbot
+# Docs: https://fly.io/docs/reference/configuration/
+
+app = 'snti-chatbot'
+primary_region = 'bom'  # Mumbai — change to closest region (sin, fra, iad, etc.)
+
+[build]
+
+[env]
+  PORT = '8080'
+  DATA_DIR = '/data'
+  PYTHONUNBUFFERED = '1'
+  # Add your API keys and Firebase credentials here OR set them via:
+  #   fly secrets set GROQ_API_KEY=xxx FIREBASE_PROJECT_ID=xxx ...
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [http_service.checks]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'GET'
+    path = '/health'
+    protocol = 'http'
+
+[[mounts]]
+  source = 'snti_data'
+  destination = '/data'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory = '256mb'
+  # Bump to 512mb if you hit OOM during heavy LLM calls.
+
+# After first deploy, create the volume:
+#   fly volumes create snti_data --region bom --size 1
+# Size is in GB; 1 GB is plenty for friends-only usage.

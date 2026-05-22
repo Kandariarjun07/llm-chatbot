@@ -1,10 +1,12 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
-// In dev, the streaming endpoint talks directly to the backend to avoid
-// Vite proxy buffering SSE responses. Non-streaming calls still go through
-// /api so cookies/auth work consistently via the proxy.
+// In dev, Vite proxies /api to localhost:8000. In production, the backend
+// serves the built frontend from the same origin, so both regular and
+// streaming calls use the same base URL.
 const API_BASE = import.meta.env.VITE_API_URL || '/api'
-const STREAM_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+// When VITE_API_URL is set (production same-origin) use it; otherwise
+// fall back to the dev proxy path so streaming also goes through /api.
+const STREAM_BASE = import.meta.env.VITE_API_URL || '/api'
 
 export const api = axios.create({
   baseURL: API_BASE,

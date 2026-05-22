@@ -26,7 +26,13 @@ import threading
 from pathlib import Path
 from typing import Any
 
-_WORKSPACE_ROOT = Path(os.path.dirname(os.path.dirname(__file__))) / "workspace"
+# Use DATA_DIR in production (mounted persistent volume), fall back to
+# project-local workspace/ for local development.
+_workspace_base = os.environ.get("DATA_DIR")
+if _workspace_base:
+    _WORKSPACE_ROOT = Path(_workspace_base) / "workspace"
+else:
+    _WORKSPACE_ROOT = Path(os.path.dirname(os.path.dirname(__file__))) / "workspace"
 
 # Per-user storage ceiling. Hard-coded rather than env-driven because it
 # intentionally constrains what we'll let a single user consume on the

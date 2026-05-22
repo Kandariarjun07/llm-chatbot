@@ -1,11 +1,14 @@
 import json
-import time
+import re
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.auth_routes import get_current_user
 from app.db import get_diagrams, get_diagram, upsert_diagram, delete_diagram
+from app.architecture.generator import ArchitectureGenerator
+from app.architecture.types import ArchitectureDiagram, Edge, Node
+from app.architecture.validator import TopologyValidator
 from llm.client import chat_completion
 
 router = APIRouter(prefix="/diagram", tags=["diagram"])
@@ -40,19 +43,19 @@ class DiagramAnalyzeRequest(BaseModel):
 @router.get("/history", response_model=list[DiagramItem])
 async def list_diagrams(user: dict[str, Any] = Depends(get_current_user)) -> list[dict]:
     uid = user["user_id"]
-    return get_diagrams(uid)
+    return await get_diagrams(uid)
 
 @router.get("/history/{diag_id}", response_model=DiagramItem)
 async def get_diagram_details(diag_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict:
     uid = user["user_id"]
-    diag = get_diagram(uid, diag_id)
+    diag = await get_diagram(uid, diag_id)
     if not diag:
         raise HTTPException(status_code=404, detail="Diagram not found")
     return diag
 
 @router.post("/history")
 async def save_diagram(body: DiagramItem, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
-    upsert_diagram(
+    await upsert_diagram(
         user["user_id"],
         {
             "id": body.id,
@@ -70,7 +73,7 @@ async def save_diagram(body: DiagramItem, user: dict[str, Any] = Depends(get_cur
 
 @router.delete("/history/{diag_id}")
 async def remove_diagram(diag_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
-    if delete_diagram(user["user_id"], diag_id):
+    if await delete_diagram(user["user_id"], diag_id):
         return {"status": "deleted"}
     raise HTTPException(status_code=404, detail="Diagram not found")
 
@@ -78,63 +81,64 @@ async def remove_diagram(diag_id: str, user: dict[str, Any] = Depends(get_curren
 
 @router.post("/generate")
 async def generate_diagram(req: DiagramGenerateRequest, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
-    """Generates a complete system architecture diagram from a text prompt or imported code files."""
-    system_prompt = (
-        "You are an expert Principal AI Software Architect.\n"
-        "Your task is to generate clean, syntax-perfect Mermaid.js flowchart markdown AND its equivalent canonical node-edge graph representation.\n"
-        "You MUST respond ONLY with a single JSON object. Do not include markdown code block tags around the JSON.\n\n"
-        "The output JSON object MUST conform EXACTLY to this schema:\n"
-        "{\n"
-        '  "mermaid_code": "A string of valid Mermaid flowchart syntax. Use flowchart TD, flowchart LR, graph TD, etc. Avoid parenthesis inside node names to prevent syntax errors. Always put node text labels in double quotes. Example: A[\\\"UI Module\\\"] --> B[\\\"Auth Service\\\"]",\n'
-        '  "nodes": [\n'
-        '    {"id": "node_id", "label": "Human Readable Label", "type": "client | service | database | cloud | queue | gatekeeper"}\n'
-        "  ],\n"
-        '  "edges": [\n'
-        '    {"id": "e_source_target", "source": "source_id", "target": "target_id", "label": "Optional Link Text"}\n'
-        "  ],\n"
-        '  "analysis": {\n'
-        '    "architecture_score": 85,\n'
-        '    "bottlenecks": ["List of scale/coupling/single-point-of-failure issues identified in this design"],\n'
-        '    "cyclic_dependencies": ["List of cycles e.g. Service A -> Service B -> Service A"],\n'
-        '    "suggestions": ["Architectural improvement proposals"]\n'
-        "  }\n"
-        "}\n\n"
-        "Classification rules for 'type' of nodes:\n"
-        "- 'client': User Interfaces, frontends, browsers, mobile applications, SPAs.\n"
-        "- 'service': REST API servers, microservices, backend computing services, docker containers, worker processes.\n"
-        "- 'database': Databases (PostgreSQL, MongoDB), caches (Redis, Memcached), persistent storage buckets.\n"
-        "- 'cloud': Third-party external APIs, SaaS interfaces (Stripe, Twilio, Sendgrid), CDNs, DNS resolvers.\n"
-        "- 'queue': Message queues, event brokers, publishers, Kafka, RabbitMQ, SQS.\n"
-        "- 'gatekeeper': Authentication servers (Firebase Auth, Auth0), API Gateways, Firewalls, Load Balancers.\n"
+    """Generates a production-grade architecture diagram using the pattern engine + LLM enhancement."""
+    generator = ArchitectureGenerator()
+
+    # Step 1: Generate structured topology via the architecture engine
+    result = generator.generate(
+        prompt=req.prompt,
+        diagram_type=req.diagram_type,
+        file_content=req.file_content,
+        file_name=req.file_name,
+        existing_mermaid=req.existing_mermaid,
     )
 
-    user_query = f"Prompt: {req.prompt}\n"
-    user_query += f"Diagram type: {req.diagram_type}\n"
-    
+    # Step 2: Optional LLM enhancement for custom/evolving diagrams
+    # If the user uploaded code or an existing diagram, ask the LLM to refine the engine output
+    if req.file_content or req.existing_mermaid:
+        result = await _llm_enhance_diagram(result, req)
+
+    return result
+
+
+async def _llm_enhance_diagram(
+    base_result: dict[str, Any], req: DiagramGenerateRequest
+) -> dict[str, Any]:
+    """Use LLM to refine the engine-generated diagram when code or existing diagrams are provided."""
+    system_prompt = (
+        "You are an expert Principal AI Software Architect.\n"
+        "You are given a machine-generated architecture diagram (Mermaid + node-edge graph).\n"
+        "Your job is to refine it based on additional code context or an existing diagram,\n"
+        "and return ONLY a JSON object matching this schema:\n"
+        "{\n"
+        '  "mermaid_code": "string",\n'
+        '  "nodes": [{"id": "...", "label": "...", "type": "..."}],\n'
+        '  "edges": [{"id": "...", "source": "...", "target": "...", "label": "..."}],\n'
+        '  "analysis": {"architecture_score": 80, "bottlenecks": [], "cyclic_dependencies": [], "suggestions": []}\n'
+        "}\n"
+        "Rules: preserve the layered subgraph structure; fix any Mermaid syntax issues; "
+        "do not hallucinate components not supported by the context.\n"
+    )
+
+    user_query = f"Base diagram:\n{json.dumps(base_result, indent=2)}\n\n"
     if req.file_content:
-        user_query += f"\nUploaded code context:\nFile Name: {req.file_name or 'unnamed'}\n```\n{req.file_content}\n```\n"
-    
+        user_query += f"Code context ({req.file_name or 'unnamed'}):\n```\n{req.file_content}\n```\n"
     if req.existing_mermaid:
-        user_query += f"\nExisting Mermaid diagram to evolve/edit:\n```mermaid\n{req.existing_mermaid}\n```\n"
+        user_query += f"Existing diagram:\n```mermaid\n{req.existing_mermaid}\n```\n"
 
     llm_response_text = ""
     try:
-        # Call LLM. We will prioritize Gemini for better structured output and compliance
         llm_response_text = chat_completion(
             messages=[{"role": "user", "content": user_query}],
             model_choice="Gemini",
             system=system_prompt,
-            temperature=0.2
+            temperature=0.2,
         )
-        
-        if not llm_response_text:
-            raise ValueError("Empty response received from AI model.")
 
-        if llm_response_text.startswith("Error:"):
-            raise ValueError(llm_response_text)
-        
-        # Clean response string to extract JSON (robust regex-based extraction)
-        import re
+        if not llm_response_text or llm_response_text.startswith("Error:"):
+            # Return the base result if LLM fails
+            return base_result
+
         clean_text = llm_response_text.strip()
         json_match = re.search(r'(\{.*\})', clean_text, re.DOTALL)
         if json_match:
@@ -145,105 +149,152 @@ async def generate_diagram(req: DiagramGenerateRequest, user: dict[str, Any] = D
             if clean_text.endswith("```"):
                 clean_text = clean_text[:-3]
             clean_text = clean_text.strip()
-        
-        parsed_json = json.loads(clean_text)
-        
-        # Resilient schema check and defaults mapping
-        if not isinstance(parsed_json, dict):
-            parsed_json = {}
-        
-        if "mermaid_code" not in parsed_json:
-            parsed_json["mermaid_code"] = ""
-        if "nodes" not in parsed_json or not isinstance(parsed_json["nodes"], list):
-            parsed_json["nodes"] = []
-        if "edges" not in parsed_json or not isinstance(parsed_json["edges"], list):
-            parsed_json["edges"] = []
-        if "analysis" not in parsed_json or not isinstance(parsed_json["analysis"], dict):
-            parsed_json["analysis"] = {
-                "architecture_score": 80,
-                "bottlenecks": [],
-                "cyclic_dependencies": [],
-                "suggestions": []
-            }
-            
-        return parsed_json
-        
-    except Exception as e:
-        # Fallback response in case of JSON parse errors or API failures
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate structured diagram from AI: {str(e)} (LLM Response: {llm_response_text[:300]}...)"
-        )
+
+        parsed = json.loads(clean_text)
+        if not isinstance(parsed, dict):
+            return base_result
+
+        # Merge LLM output with base result, preferring LLM fields when present
+        for key in ["mermaid_code", "nodes", "edges", "analysis"]:
+            if key in parsed and parsed[key]:
+                base_result[key] = parsed[key]
+
+        return base_result
+
+    except Exception:
+        # On any failure, return the engine-generated result
+        return base_result
 
 @router.post("/analyze")
 async def analyze_diagram(req: DiagramAnalyzeRequest, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
-    """Analyzes a diagram's Mermaid syntax and layout architecture, reporting on coupling, cycles, and bottlenecks."""
-    system_prompt = (
-        "You are an expert Principal AI Software Architect.\n"
-        "Your task is to analyze the provided Mermaid diagram architecture and return a structured JSON report.\n"
-        "The output JSON object MUST conform EXACTLY to this schema:\n"
-        "{\n"
-        '  "architecture_score": 0 to 100 integer,\n'
-        '  "bottlenecks": ["List of single point of failures, data bottlenecks, or coupling issues"],\n'
-        '  "cyclic_dependencies": ["List of any circular service calls found"],\n'
-        '  "suggestions": ["Constructive suggestions for improved scalability, high-availability, or modularity"]\n'
-        "}\n"
-        "Respond ONLY with valid JSON. Do not write text outside the JSON structure."
+    """Analyzes a diagram using the structured TopologyValidator, with LLM as optional fallback."""
+    # Build a temporary ArchitectureDiagram from the request payload
+    nodes: list[Node] = []
+    edges: list[Edge] = []
+
+    for n in req.nodes:
+        try:
+            from app.architecture.types import NodeType, LayerType
+
+            nodes.append(
+                Node(
+                    id=str(n.get("id", "")),
+                    label=str(n.get("label", "")),
+                    type=NodeType(n.get("type", "service")),
+                    layer=LayerType(n.get("layer", "service")),
+                    technology=str(n.get("technology", "")),
+                    scaling=str(n.get("scaling", "")),
+                    is_stateful=bool(n.get("is_stateful", False)),
+                    metadata=n.get("metadata", {}),
+                )
+            )
+        except Exception:
+            # Skip malformed nodes
+            continue
+
+    for e in req.edges:
+        try:
+            from app.architecture.types import EdgeType
+
+            edges.append(
+                Edge(
+                    source=str(e.get("source", "")),
+                    target=str(e.get("target", "")),
+                    label=str(e.get("label", "")),
+                    type=EdgeType(e.get("type", "sync_http")),
+                    is_async=bool(e.get("is_async", False)),
+                    is_bidirectional=bool(e.get("is_bidirectional", False)),
+                    metadata=e.get("metadata", {}),
+                )
+            )
+        except Exception:
+            continue
+
+    from app.architecture.layers import LayerBuilder
+
+    builder = LayerBuilder()
+    for node in nodes:
+        try:
+            builder.add_node(node)
+        except ValueError:
+            continue
+
+    diagram = ArchitectureDiagram(
+        title="Analyzed Diagram",
+        system_type=__import__("app.architecture.types", fromlist=["SystemType"]).SystemType.GENERIC,
+        layers=builder.build(),
+        edges=edges,
     )
 
-    user_query = f"Evaluate this system architecture:\n```mermaid\n{req.mermaid_code}\n```\n"
-    if req.nodes:
-        user_query += f"\nGraph Nodes: {json.dumps(req.nodes)}\n"
-    if req.edges:
-        user_query += f"\nGraph Edges: {json.dumps(req.edges)}\n"
+    validator = TopologyValidator(diagram)
+    report = validator.validate()
 
-    llm_response_text = ""
+    # Optional LLM fallback for narrative depth when the validator has little to say
+    if not report.errors and not report.warnings and not report.bottlenecks:
+        return await _llm_analyze_fallback(req)
+
+    return {
+        "architecture_score": report.architecture_score,
+        "bottlenecks": report.bottlenecks,
+        "cyclic_dependencies": report.cyclic_dependencies,
+        "suggestions": report.suggestions,
+        "validation_errors": report.errors,
+        "validation_warnings": report.warnings,
+        "engine": "TopologyValidator",
+    }
+
+
+async def _llm_analyze_fallback(req: DiagramAnalyzeRequest) -> dict[str, Any]:
+    """Use LLM for analysis when the structured validator has no findings."""
+    system_prompt = (
+        "You are an expert Principal AI Software Architect.\n"
+        "Analyze the provided Mermaid diagram and return ONLY this JSON:\n"
+        "{\n"
+        '  "architecture_score": 0 to 100,\n'
+        '  "bottlenecks": [...],\n'
+        '  "cyclic_dependencies": [...],\n'
+        '  "suggestions": [...]\n'
+        "}\n"
+    )
+    user_query = f"```mermaid\n{req.mermaid_code}\n```\n"
+    if req.nodes:
+        user_query += f"Nodes: {json.dumps(req.nodes)}\n"
+    if req.edges:
+        user_query += f"Edges: {json.dumps(req.edges)}\n"
+
     try:
-        llm_response_text = chat_completion(
+        text = chat_completion(
             messages=[{"role": "user", "content": user_query}],
             model_choice="Gemini",
             system=system_prompt,
-            temperature=0.1
+            temperature=0.1,
         )
-        
-        if not llm_response_text:
-            raise ValueError("Empty response received from AI model.")
+        if not text or text.startswith("Error:"):
+            raise ValueError("LLM failed")
 
-        if llm_response_text.startswith("Error:"):
-            raise ValueError(llm_response_text)
-        
-        # Clean response string to extract JSON (robust regex-based extraction)
-        import re
-        clean_text = llm_response_text.strip()
-        json_match = re.search(r'(\{.*\})', clean_text, re.DOTALL)
-        if json_match:
-            clean_text = json_match.group(1)
-        else:
-            if clean_text.startswith("```json"):
-                clean_text = clean_text[7:]
-            if clean_text.endswith("```"):
-                clean_text = clean_text[:-3]
-            clean_text = clean_text.strip()
-        
-        parsed_json = json.loads(clean_text)
-        
-        # Resilient schema check and defaults mapping
-        if not isinstance(parsed_json, dict):
-            parsed_json = {}
-        
-        if "architecture_score" not in parsed_json:
-            parsed_json["architecture_score"] = 80
-        if "bottlenecks" not in parsed_json or not isinstance(parsed_json["bottlenecks"], list):
-            parsed_json["bottlenecks"] = []
-        if "cyclic_dependencies" not in parsed_json or not isinstance(parsed_json["cyclic_dependencies"], list):
-            parsed_json["cyclic_dependencies"] = []
-        if "suggestions" not in parsed_json or not isinstance(parsed_json["suggestions"], list):
-            parsed_json["suggestions"] = []
-            
-        return parsed_json
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to analyze diagram: {str(e)} (LLM Response: {llm_response_text[:300]}...)"
-        )
+        clean = text.strip()
+        m = re.search(r'(\{.*\})', clean, re.DOTALL)
+        if m:
+            clean = m.group(1)
+        elif clean.startswith("```json"):
+            clean = clean[7:].rsplit("```", 1)[0].strip()
+
+        parsed = json.loads(clean)
+        if not isinstance(parsed, dict):
+            parsed = {}
+
+        return {
+            "architecture_score": parsed.get("architecture_score", 80),
+            "bottlenecks": parsed.get("bottlenecks", []),
+            "cyclic_dependencies": parsed.get("cyclic_dependencies", []),
+            "suggestions": parsed.get("suggestions", []),
+            "engine": "LLM",
+        }
+    except Exception:
+        return {
+            "architecture_score": 80,
+            "bottlenecks": [],
+            "cyclic_dependencies": [],
+            "suggestions": ["Add more service nodes to enable structured analysis."],
+            "engine": "fallback",
+        }
