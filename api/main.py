@@ -366,8 +366,13 @@ if os.path.isdir(_frontend_dist):
         path = _request.url.path
         if not path.startswith(("/auth", "/chat", "/upload", "/images", "/sheets", "/transcribe", "/diagram", "/limits", "/config", "/prompts", "/cache", "/health")):
             index_path = os.path.join(_frontend_dist, "index.html")
-            if os.path.isfile(index_path):
+            if os.path.isfile(index_path) and _exc.status_code == 404:
                 return FileResponse(index_path)
-        raise _exc
+        # For API paths (or non-404 errors), return the original HTTP error
+        # as JSON instead of re-raising (which Starlette converts to 500).
+        return JSONResponse(
+            status_code=_exc.status_code,
+            content={"detail": _exc.detail},
+        )
 
     app.mount("/", StaticFiles(directory=_frontend_dist, html=True), name="static")

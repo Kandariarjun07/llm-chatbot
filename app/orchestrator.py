@@ -324,7 +324,7 @@ async def build_chat_messages(
     language_context = build_language_context(latest_question, settings)
     language_instructions = language_context.prompt_instructions
 
-    custom_instr = await asyncio.to_thread(get_custom_instructions, user_id)
+    custom_instr = await get_custom_instructions(user_id)
     if custom_instr:
         language_instructions = f"{language_instructions}\n\nUSER PREFERENCE: {custom_instr}".strip()
 
@@ -581,7 +581,7 @@ async def answer_query(
     language_context = build_language_context(latest_question, settings)
     language_instructions = language_context.prompt_instructions
     
-    custom_instr = await asyncio.to_thread(get_custom_instructions, user_id)
+    custom_instr = await get_custom_instructions(user_id)
     if custom_instr:
         language_instructions = f"{language_instructions}\n\nUSER PREFERENCE: {custom_instr}".strip()
 

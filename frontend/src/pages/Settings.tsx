@@ -14,6 +14,9 @@ import {
   Moon,
   SignOut,
   Cpu,
+  Smiley,
+  Brain,
+  ChatCenteredText,
 } from '@phosphor-icons/react'
 
 export default function Settings() {
@@ -29,6 +32,9 @@ export default function Settings() {
   const [updating, setUpdating] = useState(false)
   const [updateMsg, setUpdateMsg] = useState<'' | 'ok' | 'err'>('')
   const [instructions, setInstructions] = useState('')
+  const [aboutMe, setAboutMe] = useState('')
+  const [responseMode, setResponseMode] = useState('friendly')
+  const [emojiFrequency, setEmojiFrequency] = useState('moderately')
   const [updatingInst, setUpdatingInst] = useState(false)
   const [instMsg, setInstMsg] = useState<'' | 'ok' | 'err'>('')
   
@@ -36,7 +42,12 @@ export default function Settings() {
   useEffect(() => {
     if (user) {
       authApi.getPreferences()
-        .then((res: any) => setInstructions(res.data.instructions || ''))
+        .then((res: any) => {
+          setInstructions(res.data.instructions || '')
+          setAboutMe(res.data.about_me || '')
+          setResponseMode(res.data.response_mode || 'friendly')
+          setEmojiFrequency(res.data.emoji_frequency || 'moderately')
+        })
         .catch(() => {})
     }
   }, [user])
@@ -60,7 +71,12 @@ export default function Settings() {
     setUpdatingInst(true)
     setInstMsg('')
     try {
-      await authApi.updatePreferences(instructions.trim())
+      await authApi.updatePreferences({
+        instructions: instructions.trim(),
+        about_me: aboutMe.trim(),
+        response_mode: responseMode,
+        emoji_frequency: emojiFrequency,
+      })
       setInstMsg('ok')
     } catch {
       setInstMsg('err')
@@ -141,49 +157,126 @@ export default function Settings() {
         </div>
       </Section>
 
-      {/* AI Instructions */}
-      <Section title="AI Instructions" icon={<Cpu size={16} />}>
-        <div className="space-y-3">
-          <label className={labelCls} style={labelStyle}>custom instructions (max 150 words)</label>
-          <p className="text-[12px] mb-3" style={{ color: 'var(--text-muted)' }}>
-            Tell the AI how you want it to respond (e.g., "Always reply in Python", "Be very concise").
-          </p>
-          <textarea
-            value={instructions}
-            onChange={(e) => {
-              const text = e.target.value;
-              const words = text.trim().split(/\s+/);
-              if (words.length <= 150 || text.length < instructions.length) {
-                setInstructions(text);
-              }
-            }}
-            placeholder="Your custom instructions..."
-            className="input w-full min-h-[100px] resize-y p-3"
-            style={{ fontSize: '13px' }}
-          />
-          <div className="flex items-center justify-between mt-2">
-            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+      {/* AI Personalization */}
+      <Section title="AI Personalization" icon={<Cpu size={16} />}>
+        <div className="space-y-6">
+          {/* About Yourself */}
+          <div>
+            <label className={labelCls} style={labelStyle}>about yourself (max 150 words)</label>
+            <p className="text-[12px] mb-2" style={{ color: 'var(--text-muted)' }}>
+              Tell the AI who you are (e.g. your role, interests, or background) to customize responses.
+            </p>
+            <textarea
+              value={aboutMe}
+              onChange={(e) => {
+                const text = e.target.value;
+                const words = text.trim().split(/\s+/);
+                if (words.length <= 150 || text.length < aboutMe.length) {
+                  setAboutMe(text);
+                }
+              }}
+              placeholder="E.g., I am a web developer studying computer science..."
+              className="input w-full min-h-[90px] resize-y p-3"
+              style={{ fontSize: '13px' }}
+            />
+            <div className="text-[11px] mt-1 text-right" style={{ color: 'var(--text-muted)' }}>
+              {aboutMe.trim() ? aboutMe.trim().split(/\s+/).length : 0} / 150 words
+            </div>
+          </div>
+
+          {/* Custom Instructions */}
+          <div>
+            <label className={labelCls} style={labelStyle}>custom instructions (max 150 words)</label>
+            <p className="text-[12px] mb-2" style={{ color: 'var(--text-muted)' }}>
+              Tell the AI how you want it to behave (e.g., "Always explain with code examples").
+            </p>
+            <textarea
+              value={instructions}
+              onChange={(e) => {
+                const text = e.target.value;
+                const words = text.trim().split(/\s+/);
+                if (words.length <= 150 || text.length < instructions.length) {
+                  setInstructions(text);
+                }
+              }}
+              placeholder="Your custom instructions..."
+              className="input w-full min-h-[90px] resize-y p-3"
+              style={{ fontSize: '13px' }}
+            />
+            <div className="text-[11px] mt-1 text-right" style={{ color: 'var(--text-muted)' }}>
               {instructions.trim() ? instructions.trim().split(/\s+/).length : 0} / 150 words
-            </span>
+            </div>
+          </div>
+
+          {/* Response Mode/Tone */}
+          <div>
+            <label className={labelCls} style={labelStyle}>response tone / mode</label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {[
+                { id: 'friendly', label: 'Friendly', desc: 'Warm & conversational', icon: <Smiley size={14} /> },
+                { id: 'formal', label: 'Formal', desc: 'Structured & academic', icon: <Brain size={14} /> },
+                { id: 'professional', label: 'Professional', desc: 'Crisp & business-like', icon: <Cpu size={14} /> },
+                { id: 'creative', label: 'Creative', desc: 'Expressive & vivid', icon: <Palette size={14} /> },
+                { id: 'humorous', label: 'Humorous', desc: 'Witty & playful', icon: <Smiley size={14} weight="fill" /> },
+                { id: 'concise', label: 'Concise', desc: 'Brief & direct', icon: <ChatCenteredText size={14} /> },
+              ].map((m) => (
+                <SelectCard
+                  key={m.id}
+                  active={responseMode === m.id}
+                  onClick={() => setResponseMode(m.id)}
+                  label={m.label}
+                  desc={m.desc}
+                  icon={m.icon}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Emoji Frequency */}
+          <div>
+            <label className={labelCls} style={labelStyle}>emoji usage</label>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+              {[
+                { id: 'never', label: 'Never', desc: '🚫 Strictly text' },
+                { id: 'rarely', label: 'Rarely', desc: '⏳ Very sparse' },
+                { id: 'moderately', label: 'Moderately', desc: '🙂 Natural' },
+                { id: 'frequently', label: 'Frequently', desc: '🎉 Expressive' },
+                { id: 'always', label: 'Always', desc: '🤪 Maximum' },
+              ].map((f) => (
+                <SelectCard
+                  key={f.id}
+                  active={emojiFrequency === f.id}
+                  onClick={() => setEmojiFrequency(f.id)}
+                  label={f.label}
+                  desc={f.desc}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Save Button & Feedback Messages */}
+          <div className="pt-4 flex items-center justify-between border-t" style={{ borderColor: 'var(--border)' }}>
+            <div>
+              {instMsg === 'ok' && (
+                <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--accent)' }}>
+                  <CheckCircle size={15} weight="fill" /> personalization saved across devices
+                </div>
+              )}
+              {instMsg === 'err' && (
+                <div className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--danger)' }}>
+                  <WarningCircle size={15} weight="fill" /> failed to save personalization
+                </div>
+              )}
+            </div>
             <button
               onClick={handleUpdateInstructions}
               disabled={updatingInst}
-              className="btn-primary"
+              className="btn-primary min-w-[100px]"
             >
               {updatingInst ? <Spinner className="animate-spin" size={14} /> : null}
-              save
+              save changes
             </button>
           </div>
-          {instMsg === 'ok' && (
-            <div className="flex items-center gap-2 text-[13px] mt-2" style={{ color: 'var(--accent)' }}>
-              <CheckCircle size={14} weight="fill" /> instructions saved across devices
-            </div>
-          )}
-          {instMsg === 'err' && (
-            <div className="flex items-center gap-2 text-[13px] mt-2" style={{ color: 'var(--danger)' }}>
-              <WarningCircle size={14} weight="fill" /> failed to save
-            </div>
-          )}
         </div>
       </Section>
 
@@ -339,5 +432,36 @@ function DataRow({
         clear
       </button>
     </div>
+  )
+}
+
+interface SelectCardProps {
+  active: boolean
+  onClick: () => void
+  label: string
+  desc: string
+  icon?: React.ReactNode
+}
+
+function SelectCard({ active, onClick, label, desc, icon }: SelectCardProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-left p-3.5 rounded-xl transition-all duration-200"
+      style={{
+        background: active ? 'var(--accent-soft)' : 'transparent',
+        border: `1px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`,
+        color: active ? 'var(--accent)' : 'var(--text)',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        {icon && <span className="shrink-0">{icon}</span>}
+        <span className="font-medium text-[13px]">{label}</span>
+      </div>
+      <p className="text-[11px] leading-relaxed" style={{ color: 'var(--text-subtle)' }}>
+        {desc}
+      </p>
+    </button>
   )
 }

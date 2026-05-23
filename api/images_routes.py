@@ -156,3 +156,131 @@ def test_model(model: str, _user: dict[str, Any] = Depends(get_current_user)) ->
             return {"model": model, "status": "unavailable", "http_status": r.status_code, "detail": r.text[:200]}
     except requests.RequestException as e:
         return {"model": model, "status": "error", "detail": str(e)}
+
+
+# ── Cloud-Sync Image History ───────────────────────────────────────
+
+from pathlib import Path
+import json
+import time
+
+LOCAL_HISTORY_FILE = Path("data/image_history.json")
+
+def _load_local_history() -> dict[str, list[dict]]:
+    if not LOCAL_HISTORY_FILE.exists():
+        return {}
+    try:
+        with open(LOCAL_HISTORY_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_local_history(data: dict[str, list[dict]]) -> None:
+    LOCAL_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOCAL_HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+class SaveImageBody(BaseModel):
+    prompt: str = Field(..., min_length=1)
+    model: str = Field(...)
+    width: int = Field(...)
+    height: int = Field(...)
+    seed: int = Field(...)
+
+
+@router.get("/history")
+async def get_image_history(user: dict[str, Any] = Depends(get_current_user)) -> list[dict]:
+    user_id = user["user_id"]
+    if os.getenv("SUPABASE_DB_URL"):
+        try:
+            from app.db_postgres import pg_get_user_images
+            return await pg_get_user_images(user_id)
+        except Exception:
+            pass
+            
+    # Local JSON fallback
+    history = _load_local_history()
+    return history.get(user_id, [])
+
+
+@router.post("/history")
+async def save_image_history(
+    body: SaveImageBody,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict:
+    user_id = user["user_id"]
+    if os.getenv("SUPABASE_DB_URL"):
+        try:
+            from app.db_postgres import pg_save_user_image
+            return await pg_save_user_image(
+                user_id=user_id,
+                prompt=body.prompt,
+                model=body.model,
+                width=body.width,
+                height=body.height,
+                seed=body.seed,
+            )
+        except Exception:
+            pass
+            
+    # Local JSON fallback
+    history = _load_local_history()
+    user_list = history.get(user_id, [])
+    new_img = {
+        "id": int(time.time() * 1000),
+        "prompt": body.prompt,
+        "model": body.model,
+        "width": body.width,
+        "height": body.height,
+        "seed": body.seed,
+        "created_at": time.time(),
+    }
+    user_list.insert(0, new_img)
+    history[user_id] = user_list
+    _save_local_history(history)
+    return new_img
+
+
+@router.delete("/history/{image_id}")
+async def delete_image_history(
+    image_id: int,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict:
+    user_id = user["user_id"]
+    if os.getenv("SUPABASE_DB_URL"):
+        try:
+            from app.db_postgres import pg_delete_user_image
+            success = await pg_delete_user_image(user_id, image_id)
+            return {"status": "success", "deleted": success}
+        except Exception:
+            pass
+            
+    # Local JSON fallback
+    history = _load_local_history()
+    user_list = history.get(user_id, [])
+    next_list = [img for img in user_list if img.get("id") != image_id]
+    history[user_id] = next_list
+    _save_local_history(history)
+    return {"status": "success", "deleted": len(user_list) != len(next_list)}
+
+
+@router.delete("/history")
+async def clear_image_history(
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict:
+    user_id = user["user_id"]
+    if os.getenv("SUPABASE_DB_URL"):
+        try:
+            from app.db_postgres import pg_delete_all_user_images
+            await pg_delete_all_user_images(user_id)
+            return {"status": "success"}
+        except Exception:
+            pass
+            
+    # Local JSON fallback
+    history = _load_local_history()
+    if user_id in history:
+        history[user_id] = []
+        _save_local_history(history)
+    return {"status": "success"}

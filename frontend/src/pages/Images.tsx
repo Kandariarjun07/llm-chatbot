@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { imagesApi } from '../lib/api'
 import {
   ImageSquare,
@@ -31,12 +31,14 @@ const SUGGESTIONS = [
 ]
 
 interface GeneratedImage {
-  url: string
-  blob: Blob
-  model: string
-  seed: number
+  id: number
   prompt: string
-  timestamp: number
+  model: string
+  width: number
+  height: number
+  seed: number
+  url: string
+  created_at: number
 }
 
 export default function Images() {
@@ -46,11 +48,30 @@ export default function Images() {
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 10000))
   const [generating, setGenerating] = useState(false)
   const [current, setCurrent] = useState<GeneratedImage | null>(null)
-  const [history, setHistory] = useState<GeneratedImage[]>(() => {
-    const saved = localStorage.getItem('image_history')
-    return saved ? JSON.parse(saved) : []
-  })
+  const [history, setHistory] = useState<GeneratedImage[]>([])
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    const fetchHistory = async () => {
+      try {
+        const res = await imagesApi.getHistory()
+        if (active) {
+          const items = res.data.map((item) => ({
+            ...item,
+            url: `https://image.pollinations.ai/prompt/${encodeURIComponent(item.prompt)}?width=${item.width}&height=${item.height}&model=${item.model}&seed=${item.seed}`,
+          }))
+          setHistory(items)
+        }
+      } catch (err) {
+        console.error('Failed to fetch image history', err)
+      }
+    }
+    fetchHistory()
+    return () => {
+      active = false
+    }
+  }, [])
 
   const generate = useCallback(async () => {
     if (!prompt.trim() || generating) return
@@ -59,6 +80,7 @@ export default function Images() {
     const r = RATIOS.find((x) => x.id === ratio) || RATIOS[0]
 
     try {
+      // 1. Generate the image content via our proxy (enforcing rate limits & keys safely)
       const res = await imagesApi.generate({
         prompt: prompt.trim(),
         model,
@@ -66,20 +88,32 @@ export default function Images() {
         height: r.h,
         seed,
       })
-      const img: GeneratedImage = {
-        url: res.url,
-        blob: res.blob,
-        model: res.model,
-        seed: res.seed,
+
+      // 2. Persist the metadata to the cloud database (with dynamic local JSON fallback)
+      const savedRes = await imagesApi.saveHistory({
         prompt: prompt.trim(),
-        timestamp: Date.now(),
-      }
-      setCurrent(img)
-      setHistory((prev) => {
-        const next = [img, ...prev]
-        localStorage.setItem('image_history', JSON.stringify(next))
-        return next
+        model,
+        width: r.w,
+        height: r.h,
+        seed,
       })
+
+      const savedItem = savedRes.data
+
+      // 3. Build immediate image layout with temporary client-side Blob URL
+      const img: GeneratedImage = {
+        id: savedItem.id,
+        prompt: savedItem.prompt,
+        model: savedItem.model,
+        width: savedItem.width,
+        height: savedItem.height,
+        seed: savedItem.seed,
+        url: res.url,
+        created_at: savedItem.created_at,
+      }
+
+      setCurrent(img)
+      setHistory((prev) => [img, ...prev])
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to generate image')
     } finally {
@@ -92,22 +126,65 @@ export default function Images() {
     generate()
   }
 
-  const download = (img: GeneratedImage) => {
-    const a = document.createElement('a')
-    a.href = img.url
-    a.download = `snti_${img.model}_${img.seed}.png`
-    a.click()
+  const download = async (img: GeneratedImage) => {
+    try {
+      let downloadUrl = img.url
+      // If it is a cross-origin CDN URL, fetch as blob to force a local file download dialog
+      if (img.url.startsWith('http')) {
+        const response = await fetch(img.url)
+        const blob = await response.blob()
+        downloadUrl = URL.createObjectURL(blob)
+      }
+      const a = document.createElement('a')
+      a.href = downloadUrl
+      a.download = `snti_${img.model}_${img.seed}.png`
+      a.click()
+      if (img.url.startsWith('http')) {
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 100)
+      }
+    } catch (err) {
+      console.error('Failed to download image', err)
+      // Fallback
+      const a = document.createElement('a')
+      a.href = img.url
+      a.target = '_blank'
+      a.download = `snti_${img.model}_${img.seed}.png`
+      a.click()
+    }
   }
 
-  const clearHistory = () => {
-    setHistory([])
-    setCurrent(null)
-    localStorage.removeItem('image_history')
+  const clearHistory = async () => {
+    try {
+      await imagesApi.clearHistory()
+      setHistory([])
+      setCurrent(null)
+    } catch (err) {
+      console.error('Failed to clear history', err)
+    }
   }
 
-  const selectedRatio = RATIOS.find((r) => r.id === ratio) || RATIOS[0]
+  const deleteImage = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation()
+    try {
+      await imagesApi.deleteHistory(id)
+      setHistory((prev) => {
+        const next = prev.filter((img) => img.id !== id)
+        if (current && current.id === id) {
+          setCurrent(next[0] || null)
+        }
+        return next
+      })
+    } catch (err) {
+      console.error('Failed to delete image', err)
+    }
+  }
+
   const labelCls = 'block text-[10px] uppercase tracking-[0.22em] mb-2'
   const labelStyle: React.CSSProperties = { color: 'var(--text-subtle)' }
+
+  const currentRatioLabel = current
+    ? RATIOS.find((r) => r.w === current.width && r.h === current.height)?.label || `${current.width}:${current.height}`
+    : ''
 
   return (
     <div className="flex flex-col h-full">
@@ -297,7 +374,7 @@ export default function Images() {
                   className="text-[11px] mt-2"
                   style={{ color: 'var(--text-muted)' }}
                 >
-                  {current.model} · {selectedRatio.label} · seed {current.seed}
+                  {current.model} · {currentRatioLabel} · seed {current.seed}
                 </p>
               </div>
               <button
@@ -356,10 +433,10 @@ export default function Images() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {history.map((img, i) => (
-                <button
+                <div
                   key={i}
                   onClick={() => setCurrent(img)}
-                  className="relative group rounded-xl overflow-hidden transition-colors"
+                  className="relative group rounded-xl overflow-hidden transition-colors cursor-pointer"
                   style={{ border: '1px solid var(--border)' }}
                   onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)' }}
@@ -373,15 +450,27 @@ export default function Images() {
                       ;(e.currentTarget as HTMLImageElement).style.opacity = '0.15'
                     }}
                   />
+                  
+                  {/* Individual Delete Button */}
+                  <button
+                    onClick={(e) => deleteImage(e, i)}
+                    className="absolute top-2.5 right-2.5 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 hover:bg-red-600 text-white shadow-md hover:scale-105 active:scale-95 transition-all shrink-0"
+                    title="Delete image from history"
+                    aria-label="Delete image from history"
+                    style={{ zIndex: 10 }}
+                  >
+                    <Trash size={13} weight="fill" />
+                  </button>
+
                   <div
-                    className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2"
+                    className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-2 pointer-events-none"
                     style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.75), transparent)' }}
                   >
                     <p className="text-[11px] line-clamp-2 text-left" style={{ color: '#fff' }}>
                       {img.prompt}
                     </p>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>

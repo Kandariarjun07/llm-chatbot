@@ -19,7 +19,7 @@ from pydantic import BaseModel, EmailStr, Field
 import firebase_admin
 from firebase_admin import auth as firebase_auth, credentials
 
-from app.preferences import get_custom_instructions, set_custom_instructions
+from app.preferences import get_custom_instructions, set_custom_instructions, get_user_preferences, set_user_preferences
 from app.db import is_user_verified, mark_user_verified
 from app.rate_limits import RateLimit, check_deep_research_limit
 from app.workspace import user_storage_usage, MAX_QUOTA_BYTES
@@ -176,10 +176,12 @@ If you did not request this code, you can safely ignore this email.
               </div>
             </td>
           </tr>
-          <!-- Copy hint button -->
+          <!-- Copy button -->
           <tr>
             <td style="padding:0 32px 28px 32px;text-align:center;">
-              <div style="display:inline-block;background:#38bdf8;color:#0f172a;padding:10px 22px;border-radius:8px;font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;font-family:'Inter',-apple-system,sans-serif;">📋 Tap the code above to copy</div>
+              <div style="display:inline-block;background:#38bdf8;color:#0f172a;padding:12px 24px;border-radius:8px;font-weight:700;font-size:13px;letter-spacing:1px;text-transform:uppercase;font-family:'Inter',-apple-system,sans-serif;-webkit-user-select:all;-moz-user-select:all;-ms-user-select:all;user-select:all;cursor:pointer;box-shadow:0 4px 6px rgba(56,189,248,0.2);">
+                📋 Double-click/Tap to copy: <span style="font-family:'SF Mono',monospace;margin-left:4px;font-weight:800;letter-spacing:1px;">{otp_code}</span>
+              </div>
             </td>
           </tr>
           <!-- Didn't request? -->
@@ -638,19 +640,27 @@ def update_profile(
 
 
 class PreferencesBody(BaseModel):
-    instructions: str = Field(..., max_length=1500)
+    instructions: str = Field("", max_length=1500)
+    about_me: str = Field("", max_length=1500)
+    response_mode: str = Field("friendly", max_length=100)
+    emoji_frequency: str = Field("moderately", max_length=100)
 
 
 @router.get("/preferences")
-def get_preferences(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, str]:
-    instructions = get_custom_instructions(user["user_id"])
-    return {"instructions": instructions}
+async def get_preferences(user: dict[str, Any] = Depends(get_current_user)) -> dict:
+    return await get_user_preferences(user["user_id"])
 
 
 @router.post("/preferences")
-def update_preferences(
+async def update_preferences(
     body: PreferencesBody,
     user: dict[str, Any] = Depends(get_current_user)
 ) -> dict[str, str]:
-    set_custom_instructions(user["user_id"], body.instructions)
+    prefs = {
+        "instructions": body.instructions,
+        "about_me": body.about_me,
+        "response_mode": body.response_mode,
+        "emoji_frequency": body.emoji_frequency,
+    }
+    await set_user_preferences(user["user_id"], prefs)
     return {"status": "success"}

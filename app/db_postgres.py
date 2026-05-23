@@ -22,11 +22,12 @@ from sqlalchemy import (
     JSON,
     Boolean,
     select,
-    insert,
     update,
     delete,
     func,
+    text,
 )
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     create_async_engine,
@@ -78,6 +79,26 @@ class UserPreference(Base):
 
     user_id = Column(String, primary_key=True)
     instructions = Column(Text, nullable=False, default="")
+    about_me = Column(Text, nullable=False, default="")
+    response_mode = Column(String, nullable=False, default="friendly")
+    emoji_frequency = Column(String, nullable=False, default="moderately")
+
+
+class UserImage(Base):
+    __tablename__ = "user_images"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, nullable=False, index=True)
+    prompt = Column(Text, nullable=False)
+    model = Column(String, nullable=False)
+    width = Column(Integer, nullable=False)
+    height = Column(Integer, nullable=False)
+    seed = Column(Integer, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
 
 
 class AiCreditsSpend(Base):
@@ -150,6 +171,10 @@ async def init_postgres_tables() -> None:
     engine = _init_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Dynamic migration to add new columns if the table already existed
+        await conn.execute(text("ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS about_me TEXT NOT NULL DEFAULT ''"))
+        await conn.execute(text("ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS response_mode VARCHAR NOT NULL DEFAULT 'friendly'"))
+        await conn.execute(text("ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS emoji_frequency VARCHAR NOT NULL DEFAULT 'moderately'"))
 
 
 # ── Conversation helpers ──────────────────────────────────────────
@@ -384,6 +409,65 @@ async def pg_set_custom_instructions(user_id: str, instructions: str) -> None:
         await session.commit()
 
 
+async def pg_get_user_preferences(user_id: str) -> dict:
+    async for session in async_session():
+        result = await session.execute(
+            select(UserPreference).where(UserPreference.user_id == user_id)
+        )
+        row = result.scalar_one_or_none()
+        if row:
+            return {
+                "instructions": row.instructions or "",
+                "about_me": row.about_me or "",
+                "response_mode": row.response_mode or "friendly",
+                "emoji_frequency": row.emoji_frequency or "moderately",
+            }
+    return {
+        "instructions": "",
+        "about_me": "",
+        "response_mode": "friendly",
+        "emoji_frequency": "moderately",
+    }
+
+
+async def pg_set_user_preferences(user_id: str, prefs: dict) -> None:
+    instructions = prefs.get("instructions", "")
+    about_me = prefs.get("about_me", "")
+    response_mode = prefs.get("response_mode", "friendly")
+    emoji_frequency = prefs.get("emoji_frequency", "moderately")
+
+    # Enforce word limits
+    inst_words = instructions.split()
+    if len(inst_words) > 150:
+        instructions = " ".join(inst_words[:150])
+    about_words = about_me.split()
+    if len(about_words) > 150:
+        about_me = " ".join(about_words[:150])
+
+    async for session in async_session():
+        stmt = (
+            insert(UserPreference)
+            .values(
+                user_id=user_id,
+                instructions=instructions,
+                about_me=about_me,
+                response_mode=response_mode,
+                emoji_frequency=emoji_frequency,
+            )
+            .on_conflict_do_update(
+                index_elements=["user_id"],
+                set_={
+                    "instructions": instructions,
+                    "about_me": about_me,
+                    "response_mode": response_mode,
+                    "emoji_frequency": emoji_frequency,
+                },
+            )
+        )
+        await session.execute(stmt)
+        await session.commit()
+
+
 # ── AI Credits helpers ────────────────────────────────────────────
 
 async def pg_get_spend() -> dict[str, Any]:
@@ -448,15 +532,116 @@ async def pg_reset_spend() -> None:
         await session.commit()
 
 
+# ── Image helpers ─────────────────────────────────────────────────
+
+async def pg_get_user_images(user_id: str) -> list[dict]:
+    async for session in async_session():
+        result = await session.execute(
+            select(UserImage).where(UserImage.user_id == user_id).order_by(UserImage.created_at.desc())
+        )
+        rows = result.scalars().all()
+        return [
+            {
+                "id": r.id,
+                "prompt": r.prompt,
+                "model": r.model,
+                "width": r.width,
+                "height": r.height,
+                "seed": r.seed,
+                "created_at": r.created_at.timestamp() if r.created_at else 0,
+            }
+            for r in rows
+        ]
+    return []
+
+
+async def pg_save_user_image(user_id: str, prompt: str, model: str, width: int, height: int, seed: int) -> dict:
+    async for session in async_session():
+        img = UserImage(
+            user_id=user_id,
+            prompt=prompt,
+            model=model,
+            width=width,
+            height=height,
+            seed=seed,
+        )
+        session.add(img)
+        await session.commit()
+        await session.refresh(img)
+        return {
+            "id": img.id,
+            "prompt": img.prompt,
+            "model": img.model,
+            "width": img.width,
+            "height": img.height,
+            "seed": img.seed,
+            "created_at": img.created_at.timestamp() if img.created_at else 0,
+        }
+    return {}
+
+
+async def pg_delete_user_image(user_id: str, image_id: int) -> bool:
+    async for session in async_session():
+        result = await session.execute(
+            delete(UserImage).where(UserImage.user_id == user_id, UserImage.id == image_id)
+        )
+        await session.commit()
+        return result.rowcount > 0
+    return False
+
+
+async def pg_delete_all_user_images(user_id: str) -> bool:
+    async for session in async_session():
+        result = await session.execute(
+            delete(UserImage).where(UserImage.user_id == user_id)
+        )
+        await session.commit()
+        return result.rowcount > 0
+    return False
+
+
 # ── Utils ─────────────────────────────────────────────────────────
 
 def _to_datetime(value: Any) -> datetime:
-    """Normalise a timestamp (float, int, or datetime) to UTC datetime."""
+    """Normalise a timestamp (float, int, str, or datetime) to UTC datetime."""
+    if value is None:
+        return datetime.now(timezone.utc)
+        
     if isinstance(value, datetime):
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
+        
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, tz=timezone.utc)
-    # Fallback to now if unparseable
+        # If it's a millisecond timestamp (e.g. year > 3000), convert to seconds
+        if value > 32503680000:
+            value = value / 1000.0
+        try:
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        except Exception:
+            return datetime.now(timezone.utc)
+            
+    if isinstance(value, str):
+        # Try to parse as float/int first
+        try:
+            val_num = float(value)
+            if val_num > 32503680000:
+                val_num = val_num / 1000.0
+            return datetime.fromtimestamp(val_num, tz=timezone.utc)
+        except ValueError:
+            pass
+            
+        # Try to parse as ISO string
+        try:
+            # Replace Z with +00:00 for robust parsing
+            iso_str = value
+            if iso_str.endswith("Z"):
+                iso_str = iso_str[:-1] + "+00:00"
+            dt = datetime.fromisoformat(iso_str)
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        except Exception:
+            pass
+            
     return datetime.now(timezone.utc)

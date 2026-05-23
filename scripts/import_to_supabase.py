@@ -34,7 +34,12 @@ from datetime import datetime, timezone
 
 def _to_ts(value):
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, tz=timezone.utc)
+        if value > 32503680000:
+            value = value / 1000.0
+        try:
+            return datetime.fromtimestamp(value, tz=timezone.utc)
+        except Exception:
+            return datetime.now(timezone.utc)
     return datetime.now(timezone.utc)
 
 

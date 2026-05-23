@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../lib/api'
 import { useAuthStore } from '../store/authStore'
-import { ArrowRight, Spinner, WarningCircle, Eye, EyeSlash, Copy, Check } from '@phosphor-icons/react'
+import { ArrowRight, Spinner, WarningCircle, Eye, EyeSlash } from '@phosphor-icons/react'
 import ThemeToggle from '../components/ThemeToggle'
 
 export default function Login() {
@@ -14,7 +14,6 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
-  const [copied, setCopied] = useState(false)
   const setUser = useAuthStore((s) => s.setUser)
   const setTokens = useAuthStore((s) => s.setTokens)
   const navigate = useNavigate()
@@ -241,26 +240,8 @@ export default function Login() {
                       placeholder="• • • • • •"
                       required
                       maxLength={6}
-                      className="input text-center font-display text-2xl tracking-[0.5em] !py-4 w-full pr-12"
+                      className="input text-center font-display text-2xl tracking-[0.5em] !py-4 w-full"
                     />
-                    {otp.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(otp)
-                            setCopied(true)
-                            setTimeout(() => setCopied(false), 1500)
-                          } catch { /* ignore */ }
-                        }}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded transition-colors"
-                        style={{ color: copied ? 'var(--accent)' : 'var(--text-muted)' }}
-                        aria-label="Copy OTP"
-                        title="Copy OTP"
-                      >
-                        {copied ? <Check size={16} weight="bold" /> : <Copy size={16} />}
-                      </button>
-                    )}
                   </div>
                   <p className="mt-3 text-[11px] text-center" style={{ color: 'var(--text-subtle)' }}>
                     Didn&apos;t receive it? Check spam / promotions — or tap resend below.

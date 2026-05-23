@@ -140,8 +140,8 @@ export const authApi = {
   refresh: (refresh_token: string) =>
     api.post('/auth/refresh', { refresh_token }),
   getPreferences: () => api.get('/auth/preferences'),
-  updatePreferences: (instructions: string) => 
-    api.post('/auth/preferences', { instructions }),
+  updatePreferences: (prefs: { instructions: string; about_me: string; response_mode: string; emoji_frequency: string }) => 
+    api.post('/auth/preferences', prefs),
 }
 
 // Chat
@@ -287,6 +287,16 @@ export const limitsApi = {
   get: () => api.get('/limits'),
 }
 
+export interface ImageHistoryEntry {
+  id: number
+  prompt: string
+  model: string
+  width: number
+  height: number
+  seed: number
+  created_at: number
+}
+
 export const imagesApi = {
   status: () => api.get('/images/status'),
   generate: async (payload: GenerateImagePayload) => {
@@ -298,6 +308,11 @@ export const imagesApi = {
     return { blob, url: URL.createObjectURL(blob), model: payload.model, seed: payload.seed }
   },
   testModel: (model: string) => api.get(`/images/test-model/${model}`),
+  getHistory: () => api.get<ImageHistoryEntry[]>('/images/history'),
+  saveHistory: (payload: { prompt: string; model: string; width: number; height: number; seed: number }) =>
+    api.post<ImageHistoryEntry>('/images/history', payload),
+  deleteHistory: (id: number) => api.delete(`/images/history/${id}`),
+  clearHistory: () => api.delete('/images/history'),
 }
 
 // File Upload
