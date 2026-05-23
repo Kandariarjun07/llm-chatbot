@@ -8,7 +8,8 @@ from pathlib import Path
 
 from app.config import get_settings
 
-PREFERENCES_FILE = Path("data/user_preferences.json")
+_data_dir = os.environ.get("DATA_DIR", "data")
+PREFERENCES_FILE = Path(_data_dir) / "user_preferences.json"
 _USE_PG = bool(os.environ.get("SUPABASE_DB_URL"))
 
 def _redis_client() -> Any | None:

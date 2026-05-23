@@ -164,7 +164,8 @@ from pathlib import Path
 import json
 import time
 
-LOCAL_HISTORY_FILE = Path("data/image_history.json")
+_data_dir = os.environ.get("DATA_DIR", "data")
+LOCAL_HISTORY_FILE = Path(_data_dir) / "image_history.json"
 
 def _load_local_history() -> dict[str, list[dict]]:
     if not LOCAL_HISTORY_FILE.exists():
