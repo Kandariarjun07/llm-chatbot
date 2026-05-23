@@ -19,5 +19,4 @@ frontend/dist/
 .idea/
 workspace/
 logs/
-data/
 .rag_index/
