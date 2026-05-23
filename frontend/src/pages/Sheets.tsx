@@ -965,7 +965,7 @@ function ChartCard({
   filename,
 }: {
   title: string
-  children: React.ReactNode
+  children: React.ReactElement
   filename: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
