@@ -46,6 +46,7 @@ import {
 import { useDiagramStore } from '../store/diagramStore';
 import { useThemeStore } from '../store/themeStore';
 import { CanonicalNode } from '../lib/diagramParser';
+import useIsMobile from '../hooks/useIsMobile';
 
 // ── Custom Node Configuration ────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ const nodeTypes = {
 export default function Architect() {
   const store = useDiagramStore();
   const theme = useThemeStore(s => s.theme);
+  const isMobile = useIsMobile();
 
   const [activeTab, setActiveTab] = useState<'templates' | 'saves' | 'import'>('templates');
   const [rightTab, setRightTab] = useState<'copilot' | 'audit'>('copilot');
@@ -254,6 +256,7 @@ export default function Architect() {
     const id = store.createDiagram('New Architecture', 'flowchart');
     store.setActive(id);
     setActiveTab('saves');
+    if (isMobile) setLeftSidebarOpen(false);
   };
 
   const handlePromptSubmit = (e: React.FormEvent) => {
@@ -281,6 +284,7 @@ export default function Architect() {
     void store.importFromCode(sourceCodeInput, importFileName || 'source_code.txt');
     setSourceCodeInput('');
     setImportFileName('');
+    if (isMobile) setLeftSidebarOpen(false);
   };
 
   // Standalone SVG export via Mermaid (inlines all styles so it never opens blank)
@@ -423,15 +427,72 @@ export default function Architect() {
     URL.revokeObjectURL(url);
   };
 
+  // Sidebar styles for mobile: fixed overlays that slide in/out via
+  // transform (GPU-composited, 60fps) instead of width animation.
+  const leftSidebarStyle: React.CSSProperties = isMobile
+    ? {
+        position: 'fixed',
+        top: 0,
+        bottom: 0,
+        left: 0,
+        width: 'min(88vw, 340px)',
+        zIndex: 50,
+        boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
+        willChange: 'transform',
+        transform: leftSidebarOpen ? 'translateX(0)' : 'translateX(-101%)',
+      }
+    : {
+        width: 320,
+        borderRight: '1px solid var(--border)',
+      };
+
+  const rightSidebarStyle: React.CSSProperties = isMobile
+    ? {
+        position: 'fixed',
+        top: 0,
+        bottom: 0,
+        right: 0,
+        width: 'min(88vw, 340px)',
+        zIndex: 50,
+        boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
+        willChange: 'transform',
+        transform: rightSidebarOpen ? 'translateX(0)' : 'translateX(101%)',
+      }
+    : {
+        width: 320,
+        borderLeft: '1px solid var(--border)',
+      };
+
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
-      
+    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden relative" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+
+      {/* Mobile backdrops */}
+      {isMobile && leftSidebarOpen && (
+        <div
+          onClick={() => setLeftSidebarOpen(false)}
+          className="fixed inset-0 bg-black/50 backdrop-blur-[2px]"
+          style={{ zIndex: 40 }}
+          aria-hidden="true"
+        />
+      )}
+      {isMobile && rightSidebarOpen && (
+        <div
+          onClick={() => setRightSidebarOpen(false)}
+          className="fixed inset-0 bg-black/50 backdrop-blur-[2px]"
+          style={{ zIndex: 40 }}
+          aria-hidden="true"
+        />
+      )}
+
       {/* ── LEFT SIDEBAR (Templates, Saved, File Context) ── */}
-      {leftSidebarOpen && (
-        <aside className="w-80 border-r flex flex-col shrink-0" style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>
+      {(leftSidebarOpen || isMobile) && (
+        <aside
+          className="border-r flex flex-col shrink-0 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden"
+          style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', ...leftSidebarStyle }}
+        >
           
           {/* Tabs selector */}
-          <div className="flex border-b text-[12px] font-medium" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex border-b text-[12px] font-medium relative items-center" style={{ borderColor: 'var(--border)' }}>
             <button
               onClick={() => setActiveTab('templates')}
               className="flex-1 py-3 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5"
@@ -462,6 +523,14 @@ export default function Architect() {
             >
               <FileCode size={14} /> Code Import
             </button>
+            {/* Mobile close button */}
+            <button
+              onClick={() => setLeftSidebarOpen(false)}
+              className="md:hidden absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg)]"
+              aria-label="Close sidebar"
+            >
+              <X size={16} weight="bold" />
+            </button>
           </div>
 
           {/* Tab content panel */}
@@ -473,7 +542,10 @@ export default function Architect() {
                 <p className="text-[11px] uppercase tracking-wider opacity-60">Architectural Templates</p>
                 
                 <button
-                  onClick={() => store.createDiagram('MERN App', 'flowchart', 'mern')}
+                  onClick={() => {
+                    store.createDiagram('MERN App', 'flowchart', 'mern');
+                    if (isMobile) setLeftSidebarOpen(false);
+                  }}
                   className="w-full text-left p-3 rounded-lg border transition-all hover:bg-[var(--bg)]"
                   style={{ borderColor: 'var(--border-strong)' }}
                 >
@@ -482,7 +554,10 @@ export default function Architect() {
                 </button>
 
                 <button
-                  onClick={() => store.createDiagram('Microservices App', 'flowchart-lr', 'microservices')}
+                  onClick={() => {
+                    store.createDiagram('Microservices App', 'flowchart-lr', 'microservices');
+                    if (isMobile) setLeftSidebarOpen(false);
+                  }}
                   className="w-full text-left p-3 rounded-lg border transition-all hover:bg-[var(--bg)]"
                   style={{ borderColor: 'var(--border-strong)' }}
                 >
@@ -491,7 +566,10 @@ export default function Architect() {
                 </button>
 
                 <button
-                  onClick={() => store.createDiagram('Event Driven App', 'flowchart', 'event_driven')}
+                  onClick={() => {
+                    store.createDiagram('Event Driven App', 'flowchart', 'event_driven');
+                    if (isMobile) setLeftSidebarOpen(false);
+                  }}
                   className="w-full text-left p-3 rounded-lg border transition-all hover:bg-[var(--bg)]"
                   style={{ borderColor: 'var(--border-strong)' }}
                 >
@@ -500,7 +578,10 @@ export default function Architect() {
                 </button>
 
                 <button
-                  onClick={() => store.createDiagram('CI/CD Pipeline', 'flowchart-lr', 'ci_cd')}
+                  onClick={() => {
+                    store.createDiagram('CI/CD Pipeline', 'flowchart-lr', 'ci_cd');
+                    if (isMobile) setLeftSidebarOpen(false);
+                  }}
                   className="w-full text-left p-3 rounded-lg border transition-all hover:bg-[var(--bg)]"
                   style={{ borderColor: 'var(--border-strong)' }}
                 >
@@ -509,7 +590,10 @@ export default function Architect() {
                 </button>
 
                 <button
-                  onClick={() => store.createDiagram('Clean Domain Arch', 'flowchart', 'clean_arch')}
+                  onClick={() => {
+                    store.createDiagram('Clean Domain Arch', 'flowchart', 'clean_arch');
+                    if (isMobile) setLeftSidebarOpen(false);
+                  }}
                   className="w-full text-left p-3 rounded-lg border transition-all hover:bg-[var(--bg)]"
                   style={{ borderColor: 'var(--border-strong)' }}
                 >
@@ -549,7 +633,10 @@ export default function Architect() {
                     return (
                       <div
                         key={id}
-                        onClick={() => store.setActive(id)}
+                        onClick={() => {
+                          store.setActive(id);
+                          if (isMobile) setLeftSidebarOpen(false);
+                        }}
                         className="group flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-colors"
                         style={{
                           background: isActive ? 'var(--accent-soft)' : 'transparent',
@@ -657,7 +744,7 @@ export default function Architect() {
                 useDiagramStore.setState({ title: val });
                 store.saveActiveDiagram();
               }}
-              className="bg-transparent border-0 outline-none font-semibold text-sm w-52 focus:bg-[var(--bg)] px-1 rounded"
+              className="bg-transparent border-0 outline-none font-semibold text-sm w-28 sm:w-52 focus:bg-[var(--bg)] px-1 rounded truncate"
               style={{ color: 'var(--text)' }}
             />
             <span className="text-[10px] px-2 py-0.5 rounded border leading-none bg-[var(--bg)]" style={{ borderColor: 'var(--border)' }}>
@@ -715,19 +802,19 @@ export default function Architect() {
 
             <button
               onClick={() => store.autoArrange('TD')}
-              className="px-2.5 py-1 text-xs rounded hover:bg-[var(--bg)] flex items-center gap-1 border"
+              className="px-2 py-1 text-xs rounded hover:bg-[var(--bg)] flex items-center gap-1 border"
               style={{ borderColor: 'var(--border)' }}
               title="Auto Layout Top-to-Bottom"
             >
-              <TreeStructure size={14} /> Align TD
+              <TreeStructure size={14} /> <span className="hidden sm:inline">Align TD</span>
             </button>
             <button
               onClick={() => store.autoArrange('LR')}
-              className="px-2.5 py-1 text-xs rounded hover:bg-[var(--bg)] flex items-center gap-1 border"
+              className="px-2 py-1 text-xs rounded hover:bg-[var(--bg)] flex items-center gap-1 border"
               style={{ borderColor: 'var(--border)' }}
               title="Auto Layout Left-to-Right"
             >
-              <TreeStructure size={14} className="rotate-90" /> Align LR
+              <TreeStructure size={14} className="rotate-90" /> <span className="hidden sm:inline">Align LR</span>
             </button>
 
             {/* Clear Canvas Action */}
@@ -737,11 +824,11 @@ export default function Architect() {
                   store.clearCanvas();
                 }
               }}
-              className="px-2.5 py-1 text-xs rounded hover:bg-[var(--danger-soft)] text-[var(--danger)] hover:text-white flex items-center gap-1 border hover:bg-[var(--danger)] transition-all ml-1"
+              className="px-2 py-1 text-xs rounded hover:bg-[var(--danger-soft)] text-[var(--danger)] hover:text-white flex items-center gap-1 border hover:bg-[var(--danger)] transition-all ml-1"
               style={{ borderColor: 'var(--border)' }}
               title="Delete all nodes and edges from active canvas"
             >
-              <TrashSimple size={14} /> Clear Canvas
+              <TrashSimple size={14} /> <span className="hidden sm:inline">Clear</span>
             </button>
 
             <div className="h-4 w-px bg-[var(--border)] mx-1" />
@@ -865,7 +952,7 @@ export default function Architect() {
         <div
           className="border-t flex flex-col transition-all duration-300"
           style={{
-            height: bottomExpanded ? 260 : 36,
+            height: bottomExpanded ? (isMobile ? 160 : 260) : 36,
             borderColor: 'var(--border)',
             background: 'var(--bg-elevated)',
             display: showDeveloperConsole ? 'flex' : 'none'
@@ -949,11 +1036,14 @@ export default function Architect() {
       </section>
 
       {/* ── RIGHT SIDEBAR (AI Prompts & Architecture Analysis) ── */}
-      {rightSidebarOpen && (
-        <aside className="w-80 border-l flex flex-col shrink-0" style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>
+      {(rightSidebarOpen || isMobile) && (
+        <aside
+          className="border-l flex flex-col shrink-0 transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden"
+          style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', ...rightSidebarStyle }}
+        >
         
         {/* Sidebar Tab Selectors */}
-        <div className="flex border-b text-[12px] font-medium shrink-0" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex border-b text-[12px] font-medium shrink-0 relative items-center" style={{ borderColor: 'var(--border)' }}>
           <button
             onClick={() => setRightTab('copilot')}
             className="flex-1 py-3 text-center border-b-2 transition-colors flex items-center justify-center gap-1.5"
@@ -962,7 +1052,7 @@ export default function Architect() {
               color: rightTab === 'copilot' ? 'var(--accent)' : 'var(--text-muted)'
             }}
           >
-            <Sparkle size={14} weight={rightTab === 'copilot' ? 'fill' : 'regular'} /> Copilot & Export
+            <Sparkle size={14} weight={rightTab === 'copilot' ? 'fill' : 'regular'} /> Copilot
           </button>
           <button
             onClick={() => setRightTab('audit')}
@@ -972,7 +1062,15 @@ export default function Architect() {
               color: rightTab === 'audit' ? 'var(--accent)' : 'var(--text-muted)'
             }}
           >
-            <Warning size={14} weight={rightTab === 'audit' ? 'fill' : 'regular'} /> Quality Audit
+            <Warning size={14} weight={rightTab === 'audit' ? 'fill' : 'regular'} /> Audit
+          </button>
+          {/* Mobile close button */}
+          <button
+            onClick={() => setRightSidebarOpen(false)}
+            className="md:hidden absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg)]"
+            aria-label="Close sidebar"
+          >
+            <X size={16} weight="bold" />
           </button>
         </div>
 

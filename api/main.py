@@ -82,6 +82,48 @@ class ChatResponse(BaseModel):
     trace: dict[str, Any] | None = None
 
 
+async def _keep_alive_loop(url: str, interval: float) -> None:
+    """Periodically GET ``url`` so Render's free tier doesn't hibernate.
+
+    Render puts a service to sleep after ~15 min of no inbound traffic.
+    A self-ping that goes out to the public URL and back in through the
+    edge proxy is counted as inbound traffic, which is enough to keep
+    the container warm. The loop is best-effort: any error is logged
+    and swallowed so a flaky DNS lookup or transient 5xx never crashes
+    the app.
+
+    Uses stdlib ``urllib`` in a worker thread (via :func:`asyncio.to_thread`)
+    to avoid adding a runtime dependency on ``httpx``/``aiohttp`` just
+    for a 30-line health pinger.
+    """
+    from urllib.request import urlopen, Request
+
+    # Small initial offset so we don't pile a ping on top of the cold-start
+    # work the lifespan is doing.
+    await asyncio.sleep(min(interval, 30.0))
+
+    while True:
+        try:
+            def _probe() -> int:
+                req = Request(url, headers={"User-Agent": "snti-keep-alive/1.0"})
+                with urlopen(req, timeout=10) as resp:
+                    return resp.status
+
+            status = await asyncio.to_thread(_probe)
+            logger.debug("keep-alive ping → %s (HTTP %s)", url, status)
+        except asyncio.CancelledError:
+            # Propagate cancellation so the lifespan can shut us down.
+            raise
+        except Exception as exc:
+            # Don't escalate — failed pings are expected occasionally
+            # (cold start, transient network) and shouldn't add noise.
+            logger.warning("keep-alive ping to %s failed: %s", url, exc)
+        try:
+            await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """App-startup hook: initialize DB schema before serving any traffic.
@@ -89,6 +131,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     Without this the very first request after a fresh Postgres deploy
     would fail with `relation "conversations" does not exist`. SQLite
     init is lazy and remains a no-op here.
+
+    Also starts a background keep-alive pinger if a public URL is known
+    (``KEEP_ALIVE_URL`` or Render's auto-injected ``RENDER_EXTERNAL_URL``),
+    so the service stays warm on platforms that hibernate idle apps.
     """
     try:
         await init_tables()
@@ -98,7 +144,42 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         # so operators can spot it, but keep auth/chat working in degraded
         # mode (the relevant routes will still raise their own errors).
         logger.error("Database initialization failed: %s", exc)
-    yield
+
+    # Keep-alive task. We resolve the target URL once at startup so the
+    # behaviour is deterministic across the process lifetime.
+    keep_alive_task: asyncio.Task[None] | None = None
+    base = (
+        os.getenv("KEEP_ALIVE_URL")
+        or os.getenv("RENDER_EXTERNAL_URL")
+        or ""
+    ).rstrip("/")
+    if base and os.getenv("KEEP_ALIVE_DISABLED", "").lower() not in {"1", "true", "yes"}:
+        # 5-minute default: well under Render's ~15-min hibernation
+        # threshold, so even two consecutive failed pings (network blip,
+        # transient 5xx) can't push the container into sleep.
+        try:
+            interval = float(os.getenv("KEEP_ALIVE_INTERVAL_SECONDS", "300"))
+        except ValueError:
+            interval = 300.0
+        ping_url = f"{base}/health"
+        keep_alive_task = asyncio.create_task(
+            _keep_alive_loop(ping_url, interval),
+            name="snti-keep-alive",
+        )
+        logger.info(
+            "Keep-alive pinger started → %s every %.0fs", ping_url, interval,
+        )
+
+    try:
+        yield
+    finally:
+        if keep_alive_task is not None:
+            keep_alive_task.cancel()
+            try:
+                await keep_alive_task
+            except (asyncio.CancelledError, Exception):
+                # Best-effort cleanup; we don't care why it ended.
+                pass
 
 
 app = FastAPI(title="SNTI AI Assistant API", version="1.0.0", lifespan=lifespan)
@@ -189,6 +270,7 @@ app.include_router(diagram_router)
 
 
 @app.get("/health")
+@app.head("/health")
 def health():
     return {"status": "ok"}
 

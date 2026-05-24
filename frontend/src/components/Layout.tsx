@@ -259,18 +259,22 @@ export default function Layout() {
 
   // On mobile the sidebar is an OVERLAY (fixed-positioned, full height,
   // floats above content) so it doesn't push the chat off-screen.
-  // On desktop it's a flex sibling that pushes the main panel.
+  // We animate via translateX (GPU-composited) instead of width so the
+  // slide is 60fps even on low-end phones. Width transitions force layout
+  // recalculation every frame — that is the root cause of the jank.
   const sidebarStyle: React.CSSProperties = isMobile
     ? {
         position: 'fixed',
         top: 0,
         bottom: 0,
         left: 0,
-        width: collapsed ? 0 : 'min(86vw, 320px)',
-        borderRight: collapsed ? 'none' : '1px solid var(--border)',
+        width: 'min(86vw, 320px)',
+        borderRight: '1px solid var(--border)',
         background: 'var(--bg-elevated)',
         zIndex: 50,
-        boxShadow: collapsed ? 'none' : '0 24px 48px rgba(0,0,0,0.35)',
+        boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
+        willChange: 'transform',
+        transform: collapsed ? 'translateX(-101%)' : 'translateX(0)',
       }
     : {
         width: collapsed ? 0 : 288,
