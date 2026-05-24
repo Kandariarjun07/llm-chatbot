@@ -19,6 +19,7 @@ import {
 } from '@phosphor-icons/react'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import ThemeToggle from './ThemeToggle'
+import useIsMobile from '../hooks/useIsMobile'
 
 const navItems = [
   { to: '/chat', icon: ChatTeardropText, label: 'Chat' },
@@ -193,7 +194,25 @@ export default function Layout() {
   const logout = useAuthStore((s) => s.logout)
   const location = useLocation()
   const navigate = useNavigate()
-  const [collapsed, setCollapsed] = useState(false)
+  const isMobile = useIsMobile()
+  // Default sidebar state: open on desktop, closed on mobile so the chat
+  // takes the full screen on first load (matches user expectation on phones).
+  const [collapsed, setCollapsed] = useState<boolean>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches,
+  )
+
+  // When viewport flips between mobile/desktop, snap the sidebar to the
+  // appropriate default so we don't end up with a frozen overlay state.
+  useEffect(() => {
+    setCollapsed(isMobile)
+  }, [isMobile])
+
+  // On mobile, close the sidebar whenever the route changes (e.g. user
+  // taps a nav link or a chat row). Without this, the overlay would stay
+  // open and obscure the destination page.
+  useEffect(() => {
+    if (isMobile) setCollapsed(true)
+  }, [location.pathname, isMobile])
 
   const {
     conversations,
@@ -238,19 +257,46 @@ export default function Layout() {
     navigate(`/chat/${newId}`)
   }
 
+  // On mobile the sidebar is an OVERLAY (fixed-positioned, full height,
+  // floats above content) so it doesn't push the chat off-screen.
+  // On desktop it's a flex sibling that pushes the main panel.
+  const sidebarStyle: React.CSSProperties = isMobile
+    ? {
+        position: 'fixed',
+        top: 0,
+        bottom: 0,
+        left: 0,
+        width: collapsed ? 0 : 'min(86vw, 320px)',
+        borderRight: collapsed ? 'none' : '1px solid var(--border)',
+        background: 'var(--bg-elevated)',
+        zIndex: 50,
+        boxShadow: collapsed ? 'none' : '0 24px 48px rgba(0,0,0,0.35)',
+      }
+    : {
+        width: collapsed ? 0 : 288,
+        borderRight: collapsed ? 'none' : '1px solid var(--border)',
+        background: 'var(--bg-elevated)',
+      }
+
   return (
     <div
-      className="flex h-screen font-sans"
+      className="flex h-[100dvh] font-sans"
       style={{ background: 'var(--bg)', color: 'var(--text)' }}
     >
+      {/* Backdrop — mobile only, only when sidebar is open. */}
+      {isMobile && !collapsed && (
+        <div
+          onClick={() => setCollapsed(true)}
+          className="fixed inset-0 bg-black/50 backdrop-blur-[2px]"
+          style={{ zIndex: 40 }}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Sidebar */}
       <aside
         className="flex flex-col transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden"
-        style={{
-          width: collapsed ? 0 : 288,
-          borderRight: collapsed ? 'none' : '1px solid var(--border)',
-          background: 'var(--bg-elevated)',
-        }}
+        style={sidebarStyle}
       >
         {/* Brand */}
         <div
@@ -386,7 +432,7 @@ export default function Layout() {
       {/* Main */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header
-          className="h-14 flex items-center px-4 shrink-0"
+          className="h-14 flex items-center px-3 sm:px-4 shrink-0 gap-2"
           style={{ borderBottom: '1px solid var(--border)' }}
         >
           <button
@@ -394,15 +440,17 @@ export default function Layout() {
             className="btn-ghost !p-2"
             aria-label={collapsed ? 'Open sidebar' : 'Close sidebar'}
           >
-            {collapsed ? <List size={18} /> : <X size={18} />}
+            {collapsed ? <List size={20} /> : <X size={20} />}
           </button>
           <span
-            className="ml-4 font-display text-[18px] tracking-tight leading-none"
+            className="ml-2 sm:ml-4 font-display text-[18px] tracking-tight leading-none truncate"
           >
             {currentLabel.toLowerCase()}
           </span>
+          {/* Date label — desktop only; on mobile we save the horizontal
+              space for the title and theme toggle. */}
           <span
-            className="ml-3 text-[11px] uppercase tracking-[0.2em] mt-1"
+            className="hidden sm:inline ml-3 text-[11px] uppercase tracking-[0.2em] mt-1"
             style={{ color: 'var(--text-subtle)' }}
           >
             — {new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}

@@ -704,7 +704,7 @@ export default function Chat() {
     <div className="flex flex-col h-full">
       {/* Stream */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-8 space-y-8">
+        <div className="max-w-3xl mx-auto px-4 py-5 sm:px-6 sm:py-8 space-y-6 sm:space-y-8">
           {/* Skeleton bubbles while chats are loading. We only show
               skeletons if the current active conv has no messages yet —
               otherwise the user is looking at a real conv and we don't
@@ -733,7 +733,7 @@ export default function Chat() {
                 — ask anything
               </p>
               <h1
-                className="font-display text-5xl md:text-6xl leading-[1.02] tracking-tight"
+                className="font-display text-[40px] sm:text-5xl md:text-6xl leading-[1.02] tracking-tight"
                 style={{ color: 'var(--text)' }}
               >
                 how can I <span className="mark">help</span> you,
@@ -803,12 +803,12 @@ export default function Chat() {
 
       {/* Composer */}
       <div
-        className="shrink-0 pt-3 pb-5"
+        className="shrink-0 pt-2 pb-3 sm:pt-3 sm:pb-5"
         style={{ borderTop: '1px solid var(--border)', background: 'var(--bg)' }}
       >
-        <div className="max-w-3xl mx-auto px-6">
+        <div className="max-w-3xl mx-auto px-3 sm:px-6">
           <div
-            className="rounded-2xl p-3 transition-colors"
+            className="rounded-2xl p-2.5 sm:p-3 transition-colors"
             style={{
               background: 'var(--bg-card)',
               border: '1px solid var(--border)',
@@ -880,7 +880,7 @@ export default function Chat() {
             />
 
             {/* Toolbar: + / Web / Research / Send */}
-            <div className="flex items-center gap-1.5 mt-2">
+            <div className="flex items-center gap-1 sm:gap-1.5 mt-2 flex-wrap">
               {/* "+" attachment menu */}
               <div className="relative" ref={plusRef}>
                 <ToolButton
@@ -893,7 +893,7 @@ export default function Chat() {
                 </ToolButton>
                 {plusOpen && (
                   <div
-                    className="absolute bottom-full left-0 mb-2 z-20 min-w-[180px] rounded-xl p-1 shadow-xl"
+                    className="absolute bottom-full left-0 mb-2 z-20 min-w-[200px] rounded-xl p-1 shadow-xl"
                     style={{
                       background: 'var(--bg-elevated)',
                       border: '1px solid var(--border-strong)',
@@ -903,13 +903,19 @@ export default function Chat() {
                       icon={<ImageSquare size={14} />}
                       label="Upload image"
                       hint="png · jpg · webp"
-                      onClick={() => imageInputRef.current?.click()}
+                      onClick={() => {
+                        imageInputRef.current?.click()
+                        setPlusOpen(false)
+                      }}
                     />
                     <PlusMenuItem
                       icon={<FileText size={14} />}
                       label="Upload file"
                       hint="pdf · txt · md · csv"
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => {
+                        fileInputRef.current?.click()
+                        setPlusOpen(false)
+                      }}
                     />
                     <div className="rule my-1" />
                     <PlusMenuItem
@@ -918,40 +924,70 @@ export default function Chat() {
                       hint="coming soon"
                       disabled
                     />
+
+                    {/* Mobile-only: surface Web search & Research here
+                        because the toolbar can't fit them on small
+                        screens. Each item shows a checkmark when active
+                        so the user can see the toggle state at a glance. */}
+                    <div className="md:hidden">
+                      <div className="rule my-1" />
+                      <PlusMenuItem
+                        icon={<Globe size={14} />}
+                        label="Web search"
+                        hint={webSearch ? 'on' : 'off'}
+                        active={webSearch}
+                        onClick={() => setWebSearch((v) => !v)}
+                      />
+                      <PlusMenuItem
+                        icon={<Flask size={14} />}
+                        label="Deep research"
+                        hint={
+                          deepResearchRemaining !== null
+                            ? `${research ? 'on' : 'off'} · ${deepResearchRemaining} left`
+                            : research ? 'on' : 'off'
+                        }
+                        active={research}
+                        onClick={() => setResearch((v) => !v)}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
 
-              <ToolButton
-                active={webSearch}
-                onClick={() => setWebSearch((v) => !v)}
-                aria-label="Toggle web search"
-                title="Search the web for up-to-date info"
-              >
-                <Globe size={13} weight={webSearch ? 'fill' : 'regular'} />
-                <span>Web search</span>
-              </ToolButton>
+              {/* Desktop-only standalone toggles. On mobile these live
+                  inside the plus menu (above) to save horizontal space. */}
+              <div className="hidden md:flex items-center gap-1.5">
+                <ToolButton
+                  active={webSearch}
+                  onClick={() => setWebSearch((v) => !v)}
+                  aria-label="Toggle web search"
+                  title="Search the web for up-to-date info"
+                >
+                  <Globe size={13} weight={webSearch ? 'fill' : 'regular'} />
+                  <span>Web search</span>
+                </ToolButton>
 
-              <ToolButton
-                active={research}
-                onClick={() => setResearch((v) => !v)}
-                aria-label="Toggle research mode"
-                title="Deeper, multi-step research"
-              >
-                <Flask size={13} weight={research ? 'fill' : 'regular'} />
-                <span>Research</span>
-                {deepResearchRemaining !== null && (
-                  <span
-                    className="ml-1 px-1 rounded text-[10px] font-bold"
-                    style={{
-                      background: deepResearchRemaining > 0 ? 'var(--accent)' : 'var(--border-strong)',
-                      color: deepResearchRemaining > 0 ? 'var(--bg)' : 'var(--text-muted)',
-                    }}
-                  >
-                    {deepResearchRemaining}
-                  </span>
-                )}
-              </ToolButton>
+                <ToolButton
+                  active={research}
+                  onClick={() => setResearch((v) => !v)}
+                  aria-label="Toggle research mode"
+                  title="Deeper, multi-step research"
+                >
+                  <Flask size={13} weight={research ? 'fill' : 'regular'} />
+                  <span>Research</span>
+                  {deepResearchRemaining !== null && (
+                    <span
+                      className="ml-1 px-1 rounded text-[10px] font-bold"
+                      style={{
+                        background: deepResearchRemaining > 0 ? 'var(--accent)' : 'var(--border-strong)',
+                        color: deepResearchRemaining > 0 ? 'var(--bg)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {deepResearchRemaining}
+                    </span>
+                  )}
+                </ToolButton>
+              </div>
 
               <div className="flex-1" />
 
@@ -1134,34 +1170,41 @@ function PlusMenuItem({
   hint,
   onClick,
   disabled,
+  active,
 }: {
   icon: React.ReactNode
   label: string
   hint?: string
   onClick?: () => void
   disabled?: boolean
+  /** When true, render the item as a "toggle on" state. Used by mobile
+   *  Web-search / Research entries so users can see the toggle status. */
+  active?: boolean
 }) {
   return (
     <button
       disabled={disabled}
       onClick={onClick}
+      aria-pressed={active}
       className="flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-[13px] text-left transition-colors disabled:cursor-not-allowed"
       style={{
-        color: disabled ? 'var(--text-subtle)' : 'var(--text)',
+        color: disabled ? 'var(--text-subtle)' : active ? 'var(--accent)' : 'var(--text)',
+        background: active ? 'var(--accent-soft)' : 'transparent',
         opacity: disabled ? 0.55 : 1,
       }}
       onMouseEnter={(e) => {
-        if (disabled) return
+        if (disabled || active) return
         e.currentTarget.style.background = 'var(--accent-soft)'
       }}
       onMouseLeave={(e) => {
+        if (active) return
         e.currentTarget.style.background = 'transparent'
       }}
     >
       <span style={{ color: disabled ? 'var(--text-subtle)' : 'var(--accent)' }}>{icon}</span>
       <span className="flex-1">{label}</span>
       {hint && (
-        <span className="text-[10px] uppercase tracking-[0.18em]" style={{ color: 'var(--text-subtle)' }}>
+        <span className="text-[10px] uppercase tracking-[0.18em]" style={{ color: active ? 'var(--accent)' : 'var(--text-subtle)' }}>
           {hint}
         </span>
       )}
