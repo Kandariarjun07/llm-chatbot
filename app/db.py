@@ -24,6 +24,7 @@ _USE_PG = bool(get_settings().supabase_db_url)
 
 if _USE_PG:
     from app.db_postgres import (
+        pg_get_conversation,
         pg_get_conversations,
         pg_upsert_conversation,
         pg_delete_conversation,
@@ -118,7 +119,7 @@ else:
     def _sqlite_get_conversations(user_id: str) -> list[dict]:
         conn = get_conn()
         rows = conn.execute(
-            "SELECT id, title, created_at, updated_at, messages FROM conversations WHERE user_id = ? ORDER BY updated_at DESC",
+            "SELECT id, title, created_at, updated_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC",
             (user_id,),
         ).fetchall()
         return [
@@ -127,10 +128,26 @@ else:
                 "title": r["title"],
                 "createdAt": r["created_at"],
                 "updatedAt": r["updated_at"],
-                "messages": json.loads(r["messages"]),
+                "messages": [],
             }
             for r in rows
         ]
+
+    def _sqlite_get_conversation(user_id: str, conv_id: str) -> dict | None:
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT id, title, created_at, updated_at, messages FROM conversations WHERE id = ? AND user_id = ?",
+            (conv_id, user_id),
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "id": row["id"],
+            "title": row["title"],
+            "createdAt": row["created_at"],
+            "updatedAt": row["updated_at"],
+            "messages": json.loads(row["messages"]),
+        }
 
     def _sqlite_upsert_conversation(user_id: str, conv: dict) -> None:
         conn = get_conn()
@@ -281,6 +298,12 @@ async def get_conversations(user_id: str) -> list[dict]:
     if _USE_PG:
         return await pg_get_conversations(user_id)
     return await asyncio.to_thread(_sqlite_get_conversations, user_id)
+
+
+async def get_conversation(user_id: str, conv_id: str) -> dict | None:
+    if _USE_PG:
+        return await pg_get_conversation(user_id, conv_id)
+    return await asyncio.to_thread(_sqlite_get_conversation, user_id, conv_id)
 
 
 async def upsert_conversation(user_id: str, conv: dict) -> None:

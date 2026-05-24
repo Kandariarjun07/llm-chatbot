@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from api.auth_routes import get_current_user
 from app.db import (
     delete_conversation,
+    get_conversation,
     get_conversations,
     upsert_conversation,
     clear_conversations,
@@ -52,6 +53,14 @@ async def list_history(user: dict[str, Any] = Depends(get_current_user)) -> list
     rows = await get_conversations(uid)
     _history_cache[uid] = (rows, now)
     return rows
+
+
+@router.get("/history/{conv_id}")
+async def get_history_detail(conv_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict:
+    conv = await get_conversation(user["user_id"], conv_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conv
 
 
 @router.post("/history")

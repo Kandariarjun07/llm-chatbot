@@ -260,6 +260,7 @@ export const chatApi = {
   },
   history: {
     list: () => api.get('/chat/history'),
+    get: (id: string) => api.get(`/chat/history/${id}`),
     save: (conv: {
       id: string
       title: string

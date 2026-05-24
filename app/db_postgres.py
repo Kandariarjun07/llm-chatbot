@@ -183,20 +183,46 @@ async def init_postgres_tables() -> None:
 async def pg_get_conversations(user_id: str) -> list[dict]:
     async for session in async_session():
         result = await session.execute(
-            select(Conversation).where(Conversation.user_id == user_id).order_by(Conversation.updated_at.desc())
+            select(
+                Conversation.id,
+                Conversation.title,
+                Conversation.created_at,
+                Conversation.updated_at,
+            ).where(Conversation.user_id == user_id).order_by(Conversation.updated_at.desc())
         )
-        rows = result.scalars().all()
+        rows = result.all()
         return [
             {
                 "id": r.id,
                 "title": r.title,
                 "createdAt": r.created_at.timestamp() if r.created_at else 0,
                 "updatedAt": r.updated_at.timestamp() if r.updated_at else 0,
-                "messages": r.messages if r.messages is not None else [],
+                "messages": [],
             }
             for r in rows
         ]
     return []
+
+
+async def pg_get_conversation(user_id: str, conv_id: str) -> dict | None:
+    """Return a single conversation with its full messages list."""
+    async for session in async_session():
+        result = await session.execute(
+            select(Conversation).where(
+                Conversation.id == conv_id, Conversation.user_id == user_id
+            )
+        )
+        r = result.scalar_one_or_none()
+        if not r:
+            return None
+        return {
+            "id": r.id,
+            "title": r.title,
+            "createdAt": r.created_at.timestamp() if r.created_at else 0,
+            "updatedAt": r.updated_at.timestamp() if r.updated_at else 0,
+            "messages": r.messages if r.messages is not None else [],
+        }
+    return None
 
 
 async def pg_upsert_conversation(user_id: str, conv: dict) -> None:

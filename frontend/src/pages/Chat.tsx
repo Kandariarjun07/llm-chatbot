@@ -308,15 +308,51 @@ export default function Chat() {
   }, [loaded, urlId, navigate])
 
   // When the active conversation changes, reset per-chat upload state and
-  // re-derive `chatHasFiles` from the backend for the new chat. This
-  // prevents an old chat's "files present" flag from leaking into a chat
-  // that has no uploads.
+  // re-derive `chatHasFiles` from the backend for the new chat. Also fetch
+  // full messages on-demand if the conversation metadata has an empty messages
+  // array (lazy loading optimization).
   useEffect(() => {
     if (!activeId) return
     setPendingFiles([])
     setAttached([])
     setChatHasFiles(false)
     let cancelled = false
+
+    // On-demand message loading: if the conversation exists but has no
+    // messages loaded (metadata-only from the list endpoint), fetch the
+    // full conversation detail in the background.
+    const conv = useChatStore.getState().conversations[activeId]
+    if (conv && conv.messages.length === 0) {
+      chatApi.history
+        .get(activeId)
+        .then((res) => {
+          if (cancelled) return
+          const fullConv = res.data
+          if (fullConv?.messages?.length > 0) {
+            const { conversations } = useChatStore.getState()
+            const existing = conversations[activeId]
+            if (existing && existing.messages.length === 0) {
+              // Hydrate the store with the fetched messages
+              useChatStore.setState({
+                conversations: {
+                  ...useChatStore.getState().conversations,
+                  [activeId]: {
+                    ...existing,
+                    messages: fullConv.messages.map((m: any) => ({
+                      id: m.id || `${m.role}-${m.createdAt || Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                      role: m.role,
+                      content: m.content,
+                      createdAt: m.createdAt || Date.now(),
+                    })),
+                  },
+                },
+              })
+            }
+          }
+        })
+        .catch(() => { /* silent — messages will load when user sends */ })
+    }
+
     uploadApi
       .listFiles(activeId)
       .then((res) => {
@@ -807,42 +843,25 @@ export default function Chat() {
         style={{ borderTop: '1px solid var(--border)', background: 'var(--bg)' }}
       >
         <div className="max-w-3xl mx-auto px-3 sm:px-6">
-          <div
-            className="rounded-2xl p-2.5 sm:p-3 transition-colors"
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border)',
-            }}
-          >
+          <div className="composer-glass-dock rounded-2xl p-2.5 sm:p-3">
             {/* Attachment chips */}
             {attached.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-2">
                 {attached.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-lg text-[12px]"
-                    style={{
-                      background: 'var(--bg-sunken)',
-                      border: '1px solid var(--border-strong)',
-                      color: 'var(--text)',
-                    }}
-                  >
+                  <div key={a.id} className="attachment-pill-card">
                     {a.kind === 'image'
-                      ? <ImageSquare size={13} style={{ color: 'var(--accent)' }} />
-                      : <FileText size={13} style={{ color: 'var(--accent)' }} />}
-                    <span className="max-w-[180px] truncate">{a.name}</span>
-                    <span style={{ color: 'var(--text-subtle)' }}>
+                      ? <ImageSquare size={13} className="pill-icon" />
+                      : <FileText size={13} className="pill-icon" />}
+                    <span className="pill-name">{a.name}</span>
+                    <span className="pill-size">
                       {formatBytes(a.size)}
                     </span>
                     {uploading && (
-                      <Spinner className="animate-spin" size={11} style={{ color: 'var(--accent)' }} />
+                      <Spinner className="animate-spin pill-icon" size={11} />
                     )}
                     <button
                       onClick={() => removeAttached(a.id)}
-                      className="p-1 rounded-md transition-colors"
-                      style={{ color: 'var(--text-muted)' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--danger)' }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)' }}
+                      className="pill-close"
                       aria-label={`Remove ${a.name}`}
                     >
                       <X size={11} weight="bold" />
@@ -1477,7 +1496,7 @@ const MessageBubble = React.memo(function MessageBubble({
   )
 
   return (
-    <div className={`flex gap-3 animate-fade-up ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+    <div className={`flex gap-3 message-bubble-animate ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       <div
         className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
         style={{

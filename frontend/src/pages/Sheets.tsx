@@ -273,7 +273,7 @@ export default function Sheets() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+      <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
         {/* Header / Empty state */}
         {!sheet ? (
           <EmptyState
@@ -290,286 +290,290 @@ export default function Sheets() {
           />
         )}
 
-        {/* Schema + sample (collapsed by default) */}
+        {/* Split workspace: schema on left, composer+results on right (desktop) */}
         {sheet && (
-          <>
-            <Collapsible
-              label={`Columns & types — ${sheet.column_count} column${sheet.column_count === 1 ? '' : 's'}`}
-              icon={<Table size={13} />}
-              open={schemaOpen}
-              onToggle={() => setSchemaOpen((v) => !v)}
-            >
-              <SchemaTable sheet={sheet} />
-            </Collapsible>
+          <div className="sheets-split-workspace">
+            {/* Left pane: schema, stats & sample rows */}
+            <div className="sheets-left-pane space-y-4">
+              <Collapsible
+                label={`Columns & types — ${sheet.column_count} column${sheet.column_count === 1 ? '' : 's'}`}
+                icon={<Table size={13} />}
+                open={schemaOpen}
+                onToggle={() => setSchemaOpen((v) => !v)}
+              >
+                <SchemaTable sheet={sheet} />
+              </Collapsible>
 
-            <Collapsible
-              label={`Sample rows — first ${sheet.sample_rows.length}`}
-              icon={<Sparkle size={13} />}
-              open={sampleOpen}
-              onToggle={() => setSampleOpen((v) => !v)}
-            >
-              <ResultTable
-                columns={sheet.columns}
-                rows={sheet.sample_rows as Record<string, unknown>[]}
-                muted
-              />
-            </Collapsible>
-          </>
-        )}
+              <Collapsible
+                label={`Sample rows — first ${sheet.sample_rows.length}`}
+                icon={<Sparkle size={13} />}
+                open={sampleOpen}
+                onToggle={() => setSampleOpen((v) => !v)}
+              >
+                <ResultTable
+                  columns={sheet.columns}
+                  rows={sheet.sample_rows as Record<string, unknown>[]}
+                  muted
+                />
+              </Collapsible>
+            </div>
 
-        {/* Composer */}
-        {sheet && (
-          <div
-            className="rounded-2xl p-4 space-y-3"
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border)',
-            }}
-          >
-            <p className="text-[11px] uppercase tracking-[0.22em]" style={{ color: 'var(--accent)' }}>
-              — ask in plain english
-            </p>
-            <textarea
-              ref={taRef}
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault()
-                  handleRun()
-                }
-              }}
-              placeholder='e.g. "show the customers with revenue over 10,000 sorted by signup date"'
-              rows={2}
-              disabled={running}
-              className="w-full bg-transparent outline-none resize-none text-[14px] leading-relaxed"
-              style={{ color: 'var(--text)' }}
-            />
+            {/* Right pane: composer + results */}
+            <div className="space-y-6">
+              {/* Composer */}
+              <div
+                className="rounded-2xl p-4 space-y-3"
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <p className="text-[11px] uppercase tracking-[0.22em]" style={{ color: 'var(--accent)' }}>
+                  — ask in plain english
+                </p>
+                <textarea
+                  ref={taRef}
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault()
+                      handleRun()
+                    }
+                  }}
+                  placeholder='e.g. "show the customers with revenue over 10,000 sorted by signup date"'
+                  rows={2}
+                  disabled={running}
+                  className="w-full bg-transparent outline-none resize-none text-[14px] leading-relaxed"
+                  style={{ color: 'var(--text)' }}
+                />
 
-            <div className="flex flex-wrap gap-2">
-              {loadingSuggestions ? (
-                <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  <Spinner className="animate-spin inline mr-1" size={11} /> Generating suggestions…
-                </span>
-              ) : (
-                suggestions.map((s) => (
+                <div className="flex flex-wrap gap-2">
+                  {loadingSuggestions ? (
+                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      <Spinner className="animate-spin inline mr-1" size={11} /> Generating suggestions…
+                    </span>
+                  ) : (
+                    suggestions.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setQuestion(s)}
+                        className="px-2.5 py-1 rounded-full text-[11px] transition-colors"
+                        style={{
+                          border: '1px solid var(--border-strong)',
+                          color: 'var(--text-muted)',
+                          background: 'transparent',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--accent-ring)'
+                          e.currentTarget.style.color = 'var(--text)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--border-strong)'
+                          e.currentTarget.style.color = 'var(--text-muted)'
+                        }}
+                      >
+                        {s}
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div
+                    role="tablist"
+                    aria-label="Response mode"
+                    className="flex items-center rounded-lg p-[2px]"
+                    style={{
+                      background: 'var(--bg-sunken)',
+                      border: '1px solid var(--border-strong)',
+                    }}
+                  >
+                    {(['Fast', 'Think'] as const).map((m) => {
+                      const active = modelChoice === m
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setModelChoice(m)}
+                          title={m === 'Fast' ? 'Quick answers, low latency' : 'Stronger reasoning, higher quality'}
+                          className="px-2.5 py-1 rounded-md text-[12px] transition-colors"
+                          style={{
+                            background: active ? 'var(--accent)' : 'transparent',
+                            color: active ? 'var(--bg)' : 'var(--text-muted)',
+                            fontWeight: active ? 600 : 400,
+                          }}
+                        >
+                          {m.toLowerCase()}
+                        </button>
+                      )
+                    })}
+                  </div>
                   <button
-                    key={s}
-                    type="button"
-                    onClick={() => setQuestion(s)}
-                    className="px-2.5 py-1 rounded-full text-[11px] transition-colors"
+                    onClick={handleSaveQuery}
+                    disabled={!question.trim()}
+                    className="px-2 py-1.5 rounded-lg text-[11px] transition-colors"
                     style={{
                       border: '1px solid var(--border-strong)',
                       color: 'var(--text-muted)',
                       background: 'transparent',
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--accent-ring)'
-                      e.currentTarget.style.color = 'var(--text)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--border-strong)'
-                      e.currentTarget.style.color = 'var(--text-muted)'
-                    }}
+                    title="Save this query for later"
                   >
-                    {s}
+                    <BookmarkSimple size={13} weight="fill" /> save
                   </button>
-                ))
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div
-                role="tablist"
-                aria-label="Response mode"
-                className="flex items-center rounded-lg p-[2px]"
-                style={{
-                  background: 'var(--bg-sunken)',
-                  border: '1px solid var(--border-strong)',
-                }}
-              >
-                {(['Fast', 'Think'] as const).map((m) => {
-                  const active = modelChoice === m
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => setModelChoice(m)}
-                      title={m === 'Fast' ? 'Quick answers, low latency' : 'Stronger reasoning, higher quality'}
-                      className="px-2.5 py-1 rounded-md text-[12px] transition-colors"
-                      style={{
-                        background: active ? 'var(--accent)' : 'transparent',
-                        color: active ? 'var(--bg)' : 'var(--text-muted)',
-                        fontWeight: active ? 600 : 400,
-                      }}
-                    >
-                      {m.toLowerCase()}
-                    </button>
-                  )
-                })}
-              </div>
-              <button
-                onClick={handleSaveQuery}
-                disabled={!question.trim()}
-                className="px-2 py-1.5 rounded-lg text-[11px] transition-colors"
-                style={{
-                  border: '1px solid var(--border-strong)',
-                  color: 'var(--text-muted)',
-                  background: 'transparent',
-                }}
-                title="Save this query for later"
-              >
-                <BookmarkSimple size={13} weight="fill" /> save
-              </button>
-              <button
-                onClick={() => setShowSaved((v) => !v)}
-                className="px-2 py-1.5 rounded-lg text-[11px] transition-colors"
-                style={{
-                  border: '1px solid var(--border-strong)',
-                  color: 'var(--text-muted)',
-                  background: 'transparent',
-                }}
-                title="Saved queries"
-              >
-                saved ({savedQueries.length})
-              </button>
-              <span className="text-[10px] uppercase tracking-[0.18em]" style={{ color: 'var(--text-subtle)' }}>
-                ctrl/⌘ + enter
-              </span>
-              <div className="flex-1" />
-              <button
-                onClick={handleRun}
-                disabled={running || !question.trim()}
-                className="btn-primary !px-4 !py-2 text-[13px]"
-              >
-                {running ? (
-                  <>
-                    <Spinner className="animate-spin" size={13} /> querying…
-                  </>
-                ) : (
-                  <>
-                    run query <ArrowRight size={13} weight="bold" />
-                  </>
-                )}
-              </button>
-            </div>
-
-            {showSaved && savedQueries.length > 0 && (
-              <div
-                className="rounded-lg p-2 space-y-1 max-h-48 overflow-y-auto"
-                style={{ background: 'var(--bg-sunken)', border: '1px solid var(--border-strong)' }}
-              >
-                {savedQueries.map((sq) => (
-                  <div
-                    key={sq.id}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-[12px] group"
-                    style={{ color: 'var(--text)' }}
-                    onClick={() => handleLoadSaved(sq)}
+                  <button
+                    onClick={() => setShowSaved((v) => !v)}
+                    className="px-2 py-1.5 rounded-lg text-[11px] transition-colors"
+                    style={{
+                      border: '1px solid var(--border-strong)',
+                      color: 'var(--text-muted)',
+                      background: 'transparent',
+                    }}
+                    title="Saved queries"
                   >
-                    <span className="flex-1 truncate">{sq.question}</span>
-                    <span className="text-[10px] shrink-0" style={{ color: 'var(--text-subtle)' }}>
-                      {new Date(sq.createdAt).toLocaleDateString()}
+                    saved ({savedQueries.length})
+                  </button>
+                  <span className="text-[10px] uppercase tracking-[0.18em]" style={{ color: 'var(--text-subtle)' }}>
+                    ctrl/⌘ + enter
+                  </span>
+                  <div className="flex-1" />
+                  <button
+                    onClick={handleRun}
+                    disabled={running || !question.trim()}
+                    className="btn-primary !px-4 !py-2 text-[13px]"
+                  >
+                    {running ? (
+                      <>
+                        <Spinner className="animate-spin" size={13} /> querying…
+                      </>
+                    ) : (
+                      <>
+                        run query <ArrowRight size={13} weight="bold" />
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {showSaved && savedQueries.length > 0 && (
+                  <div
+                    className="rounded-lg p-2 space-y-1 max-h-48 overflow-y-auto"
+                    style={{ background: 'var(--bg-sunken)', border: '1px solid var(--border-strong)' }}
+                  >
+                    {savedQueries.map((sq) => (
+                      <div
+                        key={sq.id}
+                        className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-[12px] group"
+                        style={{ color: 'var(--text)' }}
+                        onClick={() => handleLoadSaved(sq)}
+                      >
+                        <span className="flex-1 truncate">{sq.question}</span>
+                        <span className="text-[10px] shrink-0" style={{ color: 'var(--text-subtle)' }}>
+                          {new Date(sq.createdAt).toLocaleDateString()}
+                        </span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteSaved(sq.id) }}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded transition-opacity"
+                          style={{ color: 'var(--danger)' }}
+                          aria-label="Delete saved query"
+                        >
+                          <Trash size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {runError && <InlineError message={runError} />}
+              </div>
+
+              {/* Result */}
+              {result && (
+                <div
+                  className="rounded-2xl p-4 space-y-4"
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-[11px] uppercase tracking-[0.22em]" style={{ color: 'var(--accent)' }}>
+                      — result
                     </span>
+                    <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                      {result.row_count.toLocaleString()} row{result.row_count === 1 ? '' : 's'} ·{' '}
+                      {result.columns.length} column{result.columns.length === 1 ? '' : 's'}
+                      {result.truncated && ' · preview truncated'}
+                    </span>
+                    <div className="flex-1" />
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleDeleteSaved(sq.id) }}
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded transition-opacity"
-                      style={{ color: 'var(--danger)' }}
-                      aria-label="Delete saved query"
+                      onClick={handleCsvExport}
+                      disabled={csvExporting || result.row_count === 0}
+                      className="btn-ghost !px-3 !py-1.5 text-[12px]"
+                      title="Download as CSV"
                     >
-                      <Trash size={12} />
+                      {csvExporting ? (
+                        <Spinner className="animate-spin" size={12} />
+                      ) : (
+                        <>
+                          <FileCsv size={13} weight="bold" /> csv
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleExport}
+                      disabled={exporting || result.row_count === 0}
+                      className="btn-primary !px-3 !py-1.5 text-[12px]"
+                      title="Download the full query result as Excel"
+                    >
+                      {exporting ? (
+                        <>
+                          <Spinner className="animate-spin" size={12} /> exporting…
+                        </>
+                      ) : (
+                        <>
+                          <DownloadSimple size={13} weight="bold" /> .xlsx
+                        </>
+                      )}
                     </button>
                   </div>
-                ))}
-              </div>
-            )}
-            {runError && <InlineError message={runError} />}
-          </div>
-        )}
 
-        {/* Result */}
-        {result && (
-          <div
-            className="rounded-2xl p-4 space-y-4"
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border)',
-            }}
-          >
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-[11px] uppercase tracking-[0.22em]" style={{ color: 'var(--accent)' }}>
-                — result
-              </span>
-              <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                {result.row_count.toLocaleString()} row{result.row_count === 1 ? '' : 's'} ·{' '}
-                {result.columns.length} column{result.columns.length === 1 ? '' : 's'}
-                {result.truncated && ' · preview truncated'}
-              </span>
-              <div className="flex-1" />
-              <button
-                onClick={handleCsvExport}
-                disabled={csvExporting || result.row_count === 0}
-                className="btn-ghost !px-3 !py-1.5 text-[12px]"
-                title="Download as CSV"
-              >
-                {csvExporting ? (
-                  <Spinner className="animate-spin" size={12} />
-                ) : (
-                  <>
-                    <FileCsv size={13} weight="bold" /> csv
-                  </>
-                )}
-              </button>
-              <button
-                onClick={handleExport}
-                disabled={exporting || result.row_count === 0}
-                className="btn-primary !px-3 !py-1.5 text-[12px]"
-                title="Download the full query result as Excel"
-              >
-                {exporting ? (
-                  <>
-                    <Spinner className="animate-spin" size={12} /> exporting…
-                  </>
-                ) : (
-                  <>
-                    <DownloadSimple size={13} weight="bold" /> .xlsx
-                  </>
-                )}
-              </button>
+                  {result.summary && (
+                    <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text)' }}>
+                      {result.summary}
+                    </p>
+                  )}
+
+                  {/* Auto-chart */}
+                  <AutoChart chart={result.chart} columns={result.columns} rows={result.rows} />
+
+                  <Collapsible
+                    label="View generated SQL"
+                    icon={<Lightning size={12} />}
+                    open={sqlOpen}
+                    onToggle={() => setSqlOpen((v) => !v)}
+                  >
+                    <pre
+                      className="text-[12px] leading-relaxed p-3 rounded-md overflow-x-auto whitespace-pre-wrap"
+                      style={{
+                        background: 'var(--bg-sunken)',
+                        color: 'var(--text)',
+                        border: '1px solid var(--border-strong)',
+                      }}
+                    >
+                      {result.sql}
+                    </pre>
+                  </Collapsible>
+
+                  <ResultTable columns={result.columns} rows={result.rows} />
+
+                  {exportError && <InlineError message={exportError} />}
+                  {csvExportError && <InlineError message={csvExportError} />}
+                </div>
+              )}
             </div>
-
-            {result.summary && (
-              <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text)' }}>
-                {result.summary}
-              </p>
-            )}
-
-            {/* Auto-chart */}
-            <AutoChart chart={result.chart} columns={result.columns} rows={result.rows} />
-
-            <Collapsible
-              label="View generated SQL"
-              icon={<Lightning size={12} />}
-              open={sqlOpen}
-              onToggle={() => setSqlOpen((v) => !v)}
-            >
-              <pre
-                className="text-[12px] leading-relaxed p-3 rounded-md overflow-x-auto whitespace-pre-wrap"
-                style={{
-                  background: 'var(--bg-sunken)',
-                  color: 'var(--text)',
-                  border: '1px solid var(--border-strong)',
-                }}
-              >
-                {result.sql}
-              </pre>
-            </Collapsible>
-
-            <ResultTable columns={result.columns} rows={result.rows} />
-
-            {exportError && <InlineError message={exportError} />}
-            {csvExportError && <InlineError message={csvExportError} />}
           </div>
         )}
 

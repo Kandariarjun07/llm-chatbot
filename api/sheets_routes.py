@@ -762,17 +762,23 @@ async def export_csv(
     if not meta or not pq.exists():
         raise HTTPException(status_code=404, detail="No active spreadsheet. Upload one first.")
 
-    sql = body.sql
-    if not sql:
-        schema_str = _format_schema_for_prompt(meta)
-        sql = await _generate_sql(body.question or "", schema_str, user_id, body.model_choice)
-    sql = _clean_sql(sql)
+    columns = list(meta.get("columns", []))
+    sql = (
+        _clean_sql(body.sql, columns=columns)
+        if body.sql
+        else await _llm_sql(body.question or "", meta, body.model_choice)
+    )
+    ok, reason = validate_sql(sql)
+    if not ok:
+        raise HTTPException(
+            status_code=400,
+            detail="This query can't be exported — only read-only SELECTs are allowed.",
+        )
 
-    df, info = await asyncio.to_thread(
+    df = await asyncio.to_thread(
         execute_to_dataframe,
         pq,
         sql,
-        limit=None,
     )
 
     buf = io.StringIO()
@@ -790,8 +796,8 @@ async def export_csv(
         media_type="text/csv",
         headers={
             "Content-Disposition": f'attachment; filename="{download_name}"',
-            "X-Sheet-Rows": str(info["row_count"]),
-            "X-Sheet-Columns": str(info["column_count"]),
+            "X-Sheet-Rows": str(len(df)),
+            "X-Sheet-Columns": str(len(df.columns)),
             "X-Sheet-SQL": sql[:512],
         },
     )
