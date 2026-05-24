@@ -13,6 +13,14 @@ try:
 except ImportError:
     pass
 
+# Configure root logging so our `logger.error / .warning / .info` calls
+# actually show up in Render / Cloud Run logs. LOG_LEVEL env var lets ops
+# bump verbosity to DEBUG on demand without a redeploy.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -148,6 +156,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Global exception handler ─────────────────────────────────────
+# Without this, any unhandled exception inside a route handler returns
+# Starlette's bare 500 with no body, which makes debugging in production
+# painful. We log the full traceback to stderr (visible in Render logs)
+# and surface a stable JSON shape the frontend can render.
+@app.exception_handler(Exception)
+async def _unhandled_exception(request: Request, exc: Exception):
+    import traceback
+    tb = traceback.format_exc()
+    logger.error("Unhandled error on %s %s: %s\n%s",
+                 request.method, request.url.path, exc, tb)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error. Please try again; if it persists, contact support.",
+            "path": request.url.path,
+        },
+    )
+
 
 # ── Routers ──────────────────────────────────────────────────────
 app.include_router(auth_router)

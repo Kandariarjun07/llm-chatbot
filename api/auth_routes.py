@@ -374,16 +374,41 @@ async def signin(body: SignInBody) -> AuthResponse:
         "accounts:signInWithPassword",
         {"email": body.email, "password": body.password, "returnSecureToken": True},
     )
-    
+
     user_id = data.get("localId")
-    if not user_id or not await is_user_verified(user_id):
-        # Auto-send OTP for users who haven't completed OTP verification
-        send_otp(body.email)
+    # DB-tolerant verification check: if the DB is unreachable or the
+    # `user_verifications` table doesn't exist yet (e.g. first deploy),
+    # we MUST NOT return 500 — instead, treat the user as unverified and
+    # fall through to the OTP flow. The user can still complete signin
+    # via the OTP path even if the DB is degraded.
+    verified = False
+    if user_id:
+        try:
+            verified = await is_user_verified(user_id)
+        except Exception as exc:
+            logger.error("is_user_verified DB call failed for %s: %s", user_id, exc)
+            verified = False
+
+    if not user_id or not verified:
+        # Auto-send OTP for users who haven't completed OTP verification.
+        # send_otp may itself raise (e.g. SMTP missing) — convert any
+        # unexpected failure into a clear 4xx for the client instead of
+        # a confusing 500.
+        try:
+            send_otp(body.email)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("send_otp failed for %s: %s", body.email, exc)
+            raise HTTPException(
+                status_code=503,
+                detail="Verification email service is temporarily unavailable. Please try again in a few minutes.",
+            )
         raise HTTPException(
             status_code=403,
             detail="Email not verified. OTP sent.",
         )
-        
+
     data["emailVerified"] = True
     return AuthResponse(**_user_from_firebase(data))
 
@@ -405,10 +430,22 @@ def signup(body: SignUpBody) -> AuthResponse:
         id_token = update_resp.get("idToken") or id_token
         data.update(update_resp)
         data["idToken"] = id_token
-        
-    # Send custom OTP
-    send_otp(body.email)
-    
+
+    # Send custom OTP. The Firebase account is already created — we MUST NOT
+    # 500 the whole signup just because the OTP delivery layer (SMTP / OTP
+    # store) is misconfigured. Re-raise rate-limit (429) explicitly so the
+    # client can show the right message.
+    try:
+        send_otp(body.email)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("send_otp failed during signup for %s: %s", body.email, exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Account created, but the verification email service is temporarily unavailable. Please try resending the OTP in a few minutes.",
+        )
+
     result = _user_from_firebase(data)
     result["email_verified"] = False
     resp = AuthResponse(**result)
@@ -479,7 +516,13 @@ async def verify_otp(body: VerifyOtpBody) -> AuthResponse:
 
     user_id = data.get("localId")
     if user_id:
-        await mark_user_verified(user_id)
+        # DB-tolerant: if marking verified fails (table missing, network
+        # blip), don't fail the whole signin. The OTP was valid, the user
+        # holds a fresh ID token. Worst case they'll re-verify next signin.
+        try:
+            await mark_user_verified(user_id)
+        except Exception as exc:
+            logger.error("mark_user_verified DB call failed for %s: %s", user_id, exc)
 
     # Remove used OTP
     otp_store.delete_otp(body.email)
