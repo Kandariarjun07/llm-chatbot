@@ -150,6 +150,7 @@ def _init_engine() -> Any:
         max_overflow=5,
         pool_pre_ping=True,
         echo=os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true",
+        connect_args={"statement_cache_size": 0},
     )
     _SessionLocal = async_sessionmaker(
         bind=_engine,
