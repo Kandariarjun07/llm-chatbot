@@ -1,8 +1,10 @@
 import json
+import logging
 import os
 import asyncio
 import time
-from typing import Any, Literal
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Literal
 
 # Load project root .env BEFORE importing anything that reads env vars.
 try:
@@ -27,11 +29,14 @@ from api.transcribe_routes import router as transcribe_router
 from api.diagram_routes import router as diagram_router
 from app.cache import answer_cache
 from app.config import get_settings
+from app.db import init_tables
 from app.mode_routing import mode_to_model_choice
 from app.orchestrator import answer_query, build_chat_messages
 from app.rate_limits import check_deep_research_limit, RateLimit
 from llm.client import achat_completion_stream
 from prompts.compose import list_prompt_templates
+
+logger = logging.getLogger(__name__)
 
 
 class ChatHistoryItem(BaseModel):
@@ -69,7 +74,26 @@ class ChatResponse(BaseModel):
     trace: dict[str, Any] | None = None
 
 
-app = FastAPI(title="SNTI AI Assistant API", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """App-startup hook: initialize DB schema before serving any traffic.
+
+    Without this the very first request after a fresh Postgres deploy
+    would fail with `relation "conversations" does not exist`. SQLite
+    init is lazy and remains a no-op here.
+    """
+    try:
+        await init_tables()
+        logger.info("Database tables initialized.")
+    except Exception as exc:
+        # Don't crash the whole app if DB init fails — surface a clear log
+        # so operators can spot it, but keep auth/chat working in degraded
+        # mode (the relevant routes will still raise their own errors).
+        logger.error("Database initialization failed: %s", exc)
+    yield
+
+
+app = FastAPI(title="SNTI AI Assistant API", version="1.0.0", lifespan=lifespan)
 
 # ── Global body-size guard (M3) ──────────────────────────────────
 # Reject uploads / JSON bodies before FastAPI buffers them in memory.
@@ -80,6 +104,15 @@ MAX_BODY_BYTES = 25 * 1024 * 1024  # 25 MB — generous, since upload routes
 @app.middleware("http")
 async def _size_guard(request: Request, call_next):
     t0 = time.perf_counter()
+    # Defense-in-depth: rewrite any stray /api/* paths to their root
+    # equivalents so older browser-cached frontends keep working until
+    # the user picks up the new build. Production routes don't use /api,
+    # but the dev Vite proxy does — this makes both behaviors transparent.
+    raw_path = request.url.path
+    if raw_path.startswith("/api/"):
+        new_path = raw_path[4:] or "/"
+        request.scope["path"] = new_path
+        request.scope["raw_path"] = new_path.encode("utf-8")
     path = request.url.path
     cl = request.headers.get("content-length")
     if cl is not None:
@@ -364,7 +397,7 @@ if os.path.isdir(_frontend_dist):
     async def _spa_fallback(_request: Request, _exc: StarletteHTTPException):
         # Only catch 404s for non-API paths and serve index.html.
         path = _request.url.path
-        if not path.startswith(("/auth", "/chat", "/upload", "/images", "/sheets", "/transcribe", "/diagram", "/limits", "/config", "/prompts", "/cache", "/health")):
+        if not path.startswith(("/auth", "/chat", "/upload", "/images", "/sheets", "/transcribe", "/diagram", "/limits", "/config", "/prompts", "/cache", "/health", "/stream-test", "/api/")):
             index_path = os.path.join(_frontend_dist, "index.html")
             if os.path.isfile(index_path) and _exc.status_code == 404:
                 return FileResponse(index_path)

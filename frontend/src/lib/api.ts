@@ -1,12 +1,11 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 
-// In dev, Vite proxies /api to localhost:8000. In production, the backend
-// serves the built frontend from the same origin, so both regular and
-// streaming calls use the same base URL.
-const API_BASE = import.meta.env.VITE_API_URL || '/api'
-// When VITE_API_URL is set (production same-origin) use it; otherwise
-// fall back to the dev proxy path so streaming also goes through /api.
-const STREAM_BASE = import.meta.env.VITE_API_URL || '/api'
+// In dev, Vite proxies /api to localhost:8000 and strips the /api prefix.
+// In production (Docker/Render same-origin), the backend serves routes at
+// /auth, /chat, etc. — NOT under /api — so we call them directly.
+const _devBase = import.meta.env.DEV ? '/api' : ''
+const API_BASE = import.meta.env.VITE_API_URL || _devBase
+const STREAM_BASE = import.meta.env.VITE_API_URL || _devBase
 
 export const api = axios.create({
   baseURL: API_BASE,
