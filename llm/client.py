@@ -413,26 +413,108 @@ def chat_completion(
             )
 
         if model_choice == "Llama":
-            return call_with_breaker(
-                "groq",
-                _call_groq,
-                user_input,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-                system=system,
-                model=model,
-            )
+            # Fallback chain: Groq → AICredits → Cerebras → Cloudflare
+            try:
+                return call_with_breaker(
+                    "groq",
+                    _call_groq,
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    system=system,
+                    model=model,
+                )
+            except (Exception, CircuitOpenError):
+                pass
+
+            try:
+                return call_with_breaker(
+                    "aicredits",
+                    _call_aicredits,
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                )
+            except (Exception, CircuitOpenError):
+                pass
+
+            try:
+                return call_with_breaker(
+                    "cerebras",
+                    _call_cerebras,
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    system=system,
+                )
+            except (Exception, CircuitOpenError):
+                pass
+
+            try:
+                return call_with_breaker(
+                    "cloudflare",
+                    _call_cloudflare,
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    system=system,
+                )
+            except (Exception, CircuitOpenError):
+                pass
+
+            return "Error: All LLM providers are currently unavailable. Please try again later."
 
         if model_choice == "Think":
-            return call_with_breaker(
-                "groq",
-                _call_groq,
-                user_input,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-                system=system,
-                model=settings.groq_think_model,
-            )
+            # Fallback chain: Groq (think model) → AICredits → Cerebras → Cloudflare
+            try:
+                return call_with_breaker(
+                    "groq",
+                    _call_groq,
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    system=system,
+                    model=settings.groq_think_model,
+                )
+            except (Exception, CircuitOpenError):
+                pass
+
+            try:
+                return call_with_breaker(
+                    "aicredits",
+                    _call_aicredits,
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                )
+            except (Exception, CircuitOpenError):
+                pass
+
+            try:
+                return call_with_breaker(
+                    "cerebras",
+                    _call_cerebras,
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    system=system,
+                )
+            except (Exception, CircuitOpenError):
+                pass
+
+            try:
+                return call_with_breaker(
+                    "cloudflare",
+                    _call_cloudflare,
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    system=system,
+                )
+            except (Exception, CircuitOpenError):
+                pass
+
+            return "Error: All LLM providers are currently unavailable. Please try again later."
 
         if model_choice == "AICredits":
             return call_with_breaker(
@@ -699,16 +781,66 @@ def chat_completion_stream(
             return
 
         if model_choice == "Llama":
-            yield from _stream_groq(user_input, temperature=temperature, max_output_tokens=max_output_tokens)
+            # Fallback chain: Groq → AICredits → Cerebras → Cloudflare
+            try:
+                yield from _stream_groq(user_input, temperature=temperature, max_output_tokens=max_output_tokens)
+                return
+            except Exception:
+                pass
+
+            try:
+                yield from _stream_aicredits(user_input, temperature=temperature, max_output_tokens=max_output_tokens)
+                return
+            except Exception:
+                pass
+
+            try:
+                yield from _stream_cerebras(user_input, temperature=temperature, max_output_tokens=max_output_tokens)
+                return
+            except Exception:
+                pass
+
+            try:
+                yield from _stream_cloudflare(user_input, temperature=temperature, max_output_tokens=max_output_tokens)
+                return
+            except Exception:
+                pass
+
+            yield "Error: All LLM providers are currently unavailable. Please try again later."
             return
 
         if model_choice == "Think":
-            yield from _stream_groq(
-                user_input,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-                model=settings.groq_think_model,
-            )
+            # Fallback chain: Groq (think model) → AICredits → Cerebras → Cloudflare
+            try:
+                yield from _stream_groq(
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    model=settings.groq_think_model,
+                )
+                return
+            except Exception:
+                pass
+
+            try:
+                yield from _stream_aicredits(user_input, temperature=temperature, max_output_tokens=max_output_tokens)
+                return
+            except Exception:
+                pass
+
+            try:
+                yield from _stream_cerebras(user_input, temperature=temperature, max_output_tokens=max_output_tokens)
+                return
+            except Exception:
+                pass
+
+            try:
+                yield from _stream_cloudflare(user_input, temperature=temperature, max_output_tokens=max_output_tokens)
+                return
+            except Exception:
+                pass
+
+            yield "Error: All LLM providers are currently unavailable. Please try again later."
             return
 
         if model_choice == "AICredits":
@@ -809,25 +941,37 @@ async def achat_completion_stream(
 
     try:
         if model_choice == "Llama" and async_groq_client is not None:
-            async for delta in _astream_groq(
-                user_input,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-                system=system,
-            ):
-                yield delta
-            return
+            # Fallback chain: async Groq → sync AICredits → sync Cerebras → sync Cloudflare
+            try:
+                async for delta in _astream_groq(
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    system=system,
+                ):
+                    yield delta
+                return
+            except Exception:
+                pass
+
+            # Fall through to sync generator bridge which has the full fallback chain
 
         if model_choice == "Think" and async_groq_client is not None:
-            async for delta in _astream_groq(
-                user_input,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-                model=settings.groq_think_model,
-                system=system,
-            ):
-                yield delta
-            return
+            # Fallback chain: async Groq (think model) → sync AICredits → sync Cerebras → sync Cloudflare
+            try:
+                async for delta in _astream_groq(
+                    user_input,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    model=settings.groq_think_model,
+                    system=system,
+                ):
+                    yield delta
+                return
+            except Exception:
+                pass
+
+            # Fall through to sync generator bridge which has the full fallback chain
 
         if model_choice == "Gemini" and async_groq_client is not None:
             # Gemini SDK is sync. Try Gemini first via thread-bridge, fall
