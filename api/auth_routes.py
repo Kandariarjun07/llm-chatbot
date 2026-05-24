@@ -276,10 +276,11 @@ If you did not request this code, you can safely ignore this email.
 
     if brevo_api_key:
         try:
+            logger.info("Attempting Brevo HTTP API send: sender=%r, to=%r", sender, to)
             # Use Brevo HTTP API on port 443 (never blocked by Render)
             payload = {
-                "sender": {"email": sender, "name": "SNTI AI"},
-                "to": [{"email": to}],
+                "sender": {"email": sender.strip(), "name": "SNTI AI"},
+                "to": [{"email": to.strip()}],
                 "subject": "Your SNTI verification code",
                 "htmlContent": html,
                 "textContent": plain
