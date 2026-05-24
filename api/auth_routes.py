@@ -214,19 +214,34 @@ If you did not request this code, you can safely ignore this email.
         img_part.add_header("Content-Disposition", "inline", filename="logo.jpeg")
         msg_root.attach(img_part)
 
+    # Diagnose configuration before attempting connection so the operator
+    # can see exactly which env var is missing in Render logs.
+    if not settings.smtp_user or not settings.smtp_password:
+        logger.warning(
+            "SMTP send skipped for %s: SMTP_USER set=%s, SMTP_PASSWORD set=%s, SMTP_HOST=%s",
+            to, bool(settings.smtp_user), bool(settings.smtp_password), host,
+        )
+        return False
+
     try:
         if settings.smtp_tls:
             server = smtplib.SMTP(host, settings.smtp_port, timeout=10)
             server.starttls()
         else:
             server = smtplib.SMTP(host, settings.smtp_port, timeout=10)
-        if settings.smtp_user and settings.smtp_password:
-            server.login(settings.smtp_user, settings.smtp_password)
+        server.login(settings.smtp_user, settings.smtp_password)
         server.sendmail(sender, [to], msg_root.as_string())
         server.quit()
         return True
     except Exception as e:
-        logger.warning("SMTP OTP delivery failed for %s: %s", to, e)
+        # Log the exact SMTP error so operators can see the root cause
+        # (auth rejection, TLS failure, connection blocked, etc.) without
+        # needing to escalate log level.
+        logger.error(
+            "SMTP OTP delivery failed for %s via %s:%s as %s — %s: %s",
+            to, host, settings.smtp_port, settings.smtp_user,
+            type(e).__name__, e,
+        )
         return False
 
 
@@ -252,17 +267,23 @@ def send_otp(email: str) -> str:
 
     mailed = _send_otp_email(email, otp)
     if mailed:
-        logger.info("OTP emailed", extra={"email": email, "ttl": OTP_TTL_SECONDS})
+        logger.info("OTP emailed to %s (ttl=%ss)", email, OTP_TTL_SECONDS)
     else:
-        # Dev fallback: print the OTP to the console ONLY when explicit debug
-        # logging is enabled. Aggregated production logs must never carry the
-        # raw code — anyone with log-read access could replay it.
-        if get_settings().log_level.upper() == "DEBUG":
-            logger.debug("OTP generated (no SMTP configured)", extra={"email": email, "otp": otp, "ttl": OTP_TTL_SECONDS})
+        # Explicit, separate opt-in for printing OTPs to logs. Distinct from
+        # LOG_LEVEL so an operator can debug SMTP without dropping the entire
+        # app to DEBUG. ALWAYS turn this off after recovery.
+        if os.getenv("SHOW_OTP_IN_LOGS", "").lower() in {"1", "true", "yes"}:
+            logger.warning(
+                "[DEV-FALLBACK] OTP for %s = %s (ttl=%ss). "
+                "Disable SHOW_OTP_IN_LOGS once SMTP is fixed.",
+                email, otp, OTP_TTL_SECONDS,
+            )
         else:
             logger.warning(
-                "OTP generated but SMTP delivery failed. Configure SMTP_* env vars; set LOG_LEVEL=DEBUG to print codes locally.",
-                extra={"email": email, "ttl": OTP_TTL_SECONDS},
+                "OTP generated for %s but SMTP delivery failed. "
+                "Set SHOW_OTP_IN_LOGS=true to recover access via logs, "
+                "or fix SMTP_* env vars.",
+                email,
             )
     return otp
 
