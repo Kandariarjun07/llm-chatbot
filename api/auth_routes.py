@@ -129,11 +129,12 @@ def _logo_bytes() -> bytes | None:
 
 
 def _send_otp_email(to: str, otp_code: str) -> bool:
-    """Send the OTP via SMTP or Resend HTTP API if configured. Returns True on success."""
+    """Send the OTP via SMTP, Resend, or Brevo HTTP API if configured. Returns True on success."""
     settings = get_settings()
     resend_api_key = os.getenv("RESEND_API_KEY")
+    brevo_api_key = os.getenv("BREVO_API_KEY")
     host = settings.smtp_host
-    if not host and not resend_api_key:
+    if not host and not resend_api_key and not brevo_api_key:
         return False
 
     import smtplib
@@ -271,6 +272,34 @@ If you did not request this code, you can safely ignore this email.
         except Exception as e:
             logger.error("Resend API exception: %s", e)
             if not host:
+                return False
+
+    if brevo_api_key:
+        try:
+            # Use Brevo HTTP API on port 443 (never blocked by Render)
+            payload = {
+                "sender": {"email": sender, "name": "SNTI AI"},
+                "to": [{"email": to}],
+                "subject": "Your SNTI verification code",
+                "htmlContent": html,
+                "textContent": plain
+            }
+            r = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                json=payload,
+                headers={"api-key": brevo_api_key, "Content-Type": "application/json"},
+                timeout=10
+            )
+            if r.status_code in {200, 201, 202}:
+                logger.info("OTP sent successfully via Brevo HTTP API to %s.", to)
+                return True
+            else:
+                logger.error("Brevo API failed: %s %s", r.status_code, r.text)
+                if not host and not resend_api_key:
+                    return False
+        except Exception as e:
+            logger.error("Brevo API exception: %s", e)
+            if not host and not resend_api_key:
                 return False
 
     # Diagnose configuration before attempting connection so the operator
