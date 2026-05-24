@@ -129,10 +129,11 @@ def _logo_bytes() -> bytes | None:
 
 
 def _send_otp_email(to: str, otp_code: str) -> bool:
-    """Send the OTP via SMTP if configured. Returns True on success."""
+    """Send the OTP via SMTP or Resend HTTP API if configured. Returns True on success."""
     settings = get_settings()
+    resend_api_key = os.getenv("RESEND_API_KEY")
     host = settings.smtp_host
-    if not host:
+    if not host and not resend_api_key:
         return False
 
     import smtplib
@@ -242,6 +243,35 @@ If you did not request this code, you can safely ignore this email.
         img_part.add_header("Content-ID", "<logo>")
         img_part.add_header("Content-Disposition", "inline", filename="logo.jpeg")
         msg_root.attach(img_part)
+
+    if resend_api_key:
+        try:
+            # Use Resend HTTP API on port 443 (never blocked by Render)
+            payload = {
+                "from": sender,
+                "to": [to],
+                "subject": "Your SNTI verification code",
+                "html": html,
+                "text": plain
+            }
+            r = requests.post(
+                "https://api.resend.com/emails",
+                json=payload,
+                headers={"Authorization": f"Bearer {resend_api_key}", "Content-Type": "application/json"},
+                timeout=10
+            )
+            if r.ok:
+                logger.info("OTP sent successfully via Resend HTTP API to %s.", to)
+                return True
+            else:
+                logger.error("Resend API failed: %s %s", r.status_code, r.text)
+                # If Resend failed but SMTP host is set, try falling through to SMTP
+                if not host:
+                    return False
+        except Exception as e:
+            logger.error("Resend API exception: %s", e)
+            if not host:
+                return False
 
     # Diagnose configuration before attempting connection so the operator
     # can see exactly which env var is missing in Render logs.
