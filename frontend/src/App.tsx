@@ -91,6 +91,11 @@ export default function App() {
           />
           <Route path="/" element={<Navigate to="/chat" replace />} />
         </Route>
+        {/* Catch-all: anything outside the routes above (typo, stale link,
+            etc.) lands on /chat. ProtectedRoute will bounce unauthenticated
+            users to /login automatically, so we don't need to special-case
+            that here. */}
+        <Route path="*" element={<Navigate to="/chat" replace />} />
       </Routes>
     </BrowserRouter>
   )

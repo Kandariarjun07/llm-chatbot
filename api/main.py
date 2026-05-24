@@ -423,14 +423,30 @@ if os.path.isdir(_frontend_dist):
 
     @app.exception_handler(StarletteHTTPException)
     async def _spa_fallback(_request: Request, _exc: StarletteHTTPException):
-        # Only catch 404s for non-API paths and serve index.html.
-        path = _request.url.path
-        if not path.startswith(("/auth", "/chat", "/upload", "/images", "/sheets", "/transcribe", "/diagram", "/limits", "/config", "/prompts", "/cache", "/health", "/stream-test", "/api/")):
-            index_path = os.path.join(_frontend_dist, "index.html")
-            if os.path.isfile(index_path) and _exc.status_code == 404:
-                return FileResponse(index_path)
-        # For API paths (or non-404 errors), return the original HTTP error
-        # as JSON instead of re-raising (which Starlette converts to 500).
+        # SPA fallback strategy: serve index.html for browser navigations,
+        # JSON for API calls. We detect "browser navigation" as
+        #   GET method  +  Accept includes text/html  +  not under /api/.
+        # This correctly handles deep links like /chat/<id>, /login, etc.
+        # which collide with backend route prefixes (chat_router, etc.) —
+        # the backend has no GET handler for /chat/<id>, so it 404s, and
+        # we transparently rewrite that to index.html so React Router can
+        # take over client-side. Real API failures (POST, JSON Accept,
+        # /api/* paths) still return structured JSON for the client to
+        # surface to the user.
+        if _exc.status_code == 404:
+            accept = _request.headers.get("accept", "")
+            looks_like_browser_nav = (
+                _request.method == "GET"
+                and "text/html" in accept.lower()
+                and not _request.url.path.startswith("/api/")
+            )
+            if looks_like_browser_nav:
+                index_path = os.path.join(_frontend_dist, "index.html")
+                if os.path.isfile(index_path):
+                    return FileResponse(index_path)
+
+        # Default: return the original HTTP error as JSON instead of
+        # re-raising (which Starlette converts to 500).
         return JSONResponse(
             status_code=_exc.status_code,
             content={"detail": _exc.detail},

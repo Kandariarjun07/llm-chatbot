@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { authApi } from '../lib/api'
 import { useAuthStore } from '../store/authStore'
@@ -14,9 +14,21 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const user = useAuthStore((s) => s.user)
   const setUser = useAuthStore((s) => s.setUser)
   const setTokens = useAuthStore((s) => s.setTokens)
   const navigate = useNavigate()
+
+  // If the user lands on /login while already authenticated (e.g. via
+  // browser back-button or a stale tab), bounce them to /chat. Using
+  // `replace` so the back button doesn't trap them in a /login → /chat
+  // loop. We deliberately skip this when in the OTP `verify` step since
+  // the user genuinely needs to stay on the form to enter their code.
+  useEffect(() => {
+    if (user && mode !== 'verify') {
+      navigate('/chat', { replace: true })
+    }
+  }, [user, mode, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
