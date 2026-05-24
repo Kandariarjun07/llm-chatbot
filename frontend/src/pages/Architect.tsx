@@ -747,7 +747,7 @@ export default function Architect() {
               className="bg-transparent border-0 outline-none font-semibold text-sm w-28 sm:w-52 focus:bg-[var(--bg)] px-1 rounded truncate"
               style={{ color: 'var(--text)' }}
             />
-            <span className="text-[10px] px-2 py-0.5 rounded border leading-none bg-[var(--bg)]" style={{ borderColor: 'var(--border)' }}>
+            <span className="hidden sm:inline-block text-[10px] px-2 py-0.5 rounded border leading-none bg-[var(--bg)]" style={{ borderColor: 'var(--border)' }}>
               {store.diagramType}
             </span>
             <button
@@ -763,7 +763,7 @@ export default function Architect() {
             <button
               onClick={() => store.undo()}
               disabled={store.historyIndex <= 0}
-              className="p-1.5 rounded hover:bg-[var(--bg)] text-[var(--text-muted)] disabled:opacity-30"
+              className="hidden sm:inline-flex p-1.5 rounded hover:bg-[var(--bg)] text-[var(--text-muted)] disabled:opacity-30"
               title="Undo Action"
             >
               <ArrowCounterClockwise size={16} />
@@ -771,15 +771,15 @@ export default function Architect() {
             <button
               onClick={() => store.redo()}
               disabled={store.historyIndex >= store.historyStack.length - 1}
-              className="p-1.5 rounded hover:bg-[var(--bg)] text-[var(--text-muted)] disabled:opacity-30"
+              className="hidden sm:inline-flex p-1.5 rounded hover:bg-[var(--bg)] text-[var(--text-muted)] disabled:opacity-30"
               title="Redo Action"
             >
               <ArrowClockwise size={16} />
             </button>
-            <div className="h-4 w-px bg-[var(--border)] mx-1" />
+            <div className="h-4 w-px bg-[var(--border)] mx-1 hidden sm:block" />
 
             {/* Canvas Interaction Modes (Pan / Multi-Select Toggle) */}
-            <div className="flex items-center border rounded bg-[var(--bg)] p-0.5" style={{ borderColor: 'var(--border)' }}>
+            <div className="hidden sm:flex items-center border rounded bg-[var(--bg)] p-0.5" style={{ borderColor: 'var(--border)' }}>
               <button
                 onClick={() => setDragMode('pan')}
                 className={`p-1 rounded transition-colors ${dragMode === 'pan' ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]'}`}
