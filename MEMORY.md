@@ -8,10 +8,12 @@ Audit and optimize the full-stack LLM Chatbot application, covering chat retriev
 * **Metadata-Only Retrieval**: Optimized initial loading by retrieving only chat metadata (id, title, timestamps) on login, leaving the `messages` array empty (`[]`). This speeds up initial page load dramatically.
 * **On-Demand Message Fetching**: The frontend now checks if a conversation's messages are empty on activation, and dynamically fetches details in the background using `GET /history/{id}` to hydrate the Zustand store on-demand.
 * **Split-Workspace Layout for Sheets**: Refactored `Sheets.tsx` into a responsive split-workspace CSS layout (desktop: 35/65 split) where the database schema and sample rows stick to the left, and the AI composer and results occupy the right pane.
+* **Fast Startups & Token Verification**: Deferring Firebase Admin SDK initialization to runtime completely eliminates the 10-second blocking Google credentials metadata query on startup. Converting the auth dependency to `async def` and implementing in-flight request deduplication collapses parallel login/navigation requests down to a single network call.
+* **SMTP over SSL (Port 465) for Render**: Added a robust secure email transport (`_IPv4SMTP_SSL`) that forces IPv4 resolution to prevent timeouts and handles port 465 SSL handshakes natively.
 
 ## 3. Pending Tasks
-* **Verification**: Wait for the background `npm run build` process to finish. Verify if the syntax error in `Sheets.tsx` is completely resolved and the app compiles successfully.
-* **Task Tracker & Walkthrough**: Mark off items in the `task.md` and create a `walkthrough.md` to document the completed visual and performance enhancements.
+* **Verification on Render**: Update environment variables in Render to set `SMTP_PORT=465` and `SMTP_TLS=false` (or set `SMTP_SSL=true`) and verify OTP delivery.
 
 ## 4. Known Bugs & Gotchas
 * **JSX Comment Mismatches**: Trailing comments (e.g. `{/* end sheets-split-workspace */}`) outside of JSX tags but inside JavaScript block expressions cause TS1005 syntax errors because they are parsed in standard JavaScript context rather than JSX child context. Do not write JSX comments after closing tags in curly brace conditionals.
+* **Port 587 Restrictions**: Outbound ports 25 and 587 are blocked on Render. Always use port 465 with SSL for Render deployments.

@@ -36,16 +36,45 @@ logger = logging.getLogger(__name__)
 _AUTH_CACHE: dict[str, tuple[dict[str, Any], float]] = {}
 _AUTH_CACHE_TTL = 300  # seconds
 
-# Initialize Firebase Admin SDK
-if not firebase_admin._apps:
-    project_id = os.getenv("FIREBASE_PROJECT_ID")
+_firebase_initialized = False
+
+def _ensure_firebase_initialized() -> bool:
+    """Lazily initialize the Firebase Admin SDK.
+    
+    Returns True if initialized successfully or already initialized.
+    """
+    global _firebase_initialized
+    if _firebase_initialized:
+        return True
+        
+    if firebase_admin._apps:
+        _firebase_initialized = True
+        return True
+        
+    # Check if we have credentials env vars or are likely running on GCP
+    has_creds = (
+        os.getenv("GOOGLE_APPLICATION_CREDENTIALS") is not None
+        or os.getenv("FIREBASE_PROJECT_ID") is not None
+        or os.getenv("K_SERVICE") is not None  # Cloud Run
+        or os.getenv("GAE_ENV") is not None    # App Engine
+    )
+    
+    if not has_creds:
+        logger.info("Firebase Admin SDK credentials not found. Local token verification will be skipped.")
+        return False
+        
     try:
+        project_id = os.getenv("FIREBASE_PROJECT_ID")
         if project_id:
             firebase_admin.initialize_app(options={"projectId": project_id})
         else:
             firebase_admin.initialize_app()
+        _firebase_initialized = True
+        logger.info("Firebase Admin SDK successfully initialized.")
+        return True
     except Exception as e:
         logger.warning(f"Failed to initialize firebase_admin: {e}")
+        return False
 
 FIREBASE_AUTH_BASE_URL = "https://identitytoolkit.googleapis.com/v1"
 FIREBASE_SECURE_TOKEN_URL = "https://securetoken.googleapis.com/v1/token"
@@ -223,11 +252,6 @@ If you did not request this code, you can safely ignore this email.
         )
         return False
 
-    # Force IPv4 connection. Cloud hosts (Render, Fly, etc.) frequently
-    # have no IPv6 route, so the default `socket.create_connection` with
-    # AF_UNSPEC raises [Errno 101] Network is unreachable when the SMTP
-    # host resolves to an AAAA record first. Resolving AF_INET-only and
-    # connecting manually sidesteps this completely.
     import socket as _socket
 
     class _IPv4SMTP(smtplib.SMTP):
@@ -251,10 +275,40 @@ If you did not request this code, you can safely ignore this email.
             assert last_err is not None
             raise last_err
 
+    class _IPv4SMTP_SSL(smtplib.SMTP_SSL):
+        def _get_socket(self, host: str, port: int, timeout: float):
+            # Constrains to IPv4 and wraps in SSL
+            infos = _socket.getaddrinfo(
+                host, port, _socket.AF_INET, _socket.SOCK_STREAM
+            )
+            if not infos:
+                raise OSError(f"No IPv4 address resolved for {host!r}")
+            last_err: Exception | None = None
+            sock = None
+            for family, socktype, proto, _canon, sockaddr in infos:
+                sock = _socket.socket(family, socktype, proto)
+                try:
+                    sock.settimeout(timeout)
+                    sock.connect(sockaddr)
+                    break
+                except OSError as e:
+                    last_err = e
+                    sock.close()
+                    sock = None
+            if sock is None:
+                assert last_err is not None
+                raise last_err
+            return self.context.wrap_socket(sock, server_hostname=self._host)
+
+    is_ssl = getattr(settings, "smtp_ssl", False) or settings.smtp_port == 465
+
     try:
-        server = _IPv4SMTP(host, settings.smtp_port, timeout=10)
-        if settings.smtp_tls:
-            server.starttls()
+        if is_ssl:
+            server = _IPv4SMTP_SSL(host, settings.smtp_port, timeout=10)
+        else:
+            server = _IPv4SMTP(host, settings.smtp_port, timeout=10)
+            if settings.smtp_tls:
+                server.starttls()
         server.login(settings.smtp_user, settings.smtp_password)
         server.sendmail(sender, [to], msg_root.as_string())
         server.quit()
@@ -630,9 +684,46 @@ def refresh(body: RefreshBody) -> AuthResponse:
     )
 
 
+import asyncio
+
+_IN_FLIGHT_AUTH: dict[str, asyncio.Future] = {}
+
+async def _verify_token_async(token: str) -> dict[str, Any]:
+    # ── 1. Try firebase_admin SDK verification (fast, local JWKS) ──
+    if _ensure_firebase_initialized():
+        try:
+            decoded = await asyncio.to_thread(firebase_auth.verify_id_token, token)
+            email = decoded.get("email", "")
+            return {
+                "user_id": decoded.get("uid", ""),
+                "email": email,
+                "name": decoded.get("name") or (email.split("@")[0] if email else "User"),
+            }
+        except Exception:
+            pass
+
+    # ── 2. REST API fallback (works without service account credentials) ──
+    try:
+        lookup = await asyncio.to_thread(_firebase_request, "accounts:lookup", {"idToken": token})
+        user = (lookup.get("users") or [{}])[0]
+        if not user:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown user.")
+        email = user.get("email", "")
+        return {
+            "user_id": user.get("localId", "") or email,
+            "email": email,
+            "name": user.get("displayName") or (email.split("@")[0] if email else "User"),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("REST API fallback failed: %s", exc)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token.")
+
+
 # ─── Auth dependency: parse Bearer token, return user info ───
 
-def get_current_user(
+async def get_current_user(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
@@ -647,42 +738,32 @@ def get_current_user(
         request.state.user = cached[0]
         return cached[0]
 
-    # ── 1. Try firebase_admin SDK verification (fast, local JWKS) ──
-    try:
-        decoded = firebase_auth.verify_id_token(token)
-        email = decoded.get("email", "")
-        result = {
-            "user_id": decoded.get("uid", ""),
-            "email": email,
-            "name": decoded.get("name") or (email.split("@")[0] if email else "User"),
-        }
+    # ── 1. Deduplicate parallel requests for the same token ──
+    if token in _IN_FLIGHT_AUTH:
+        result = await _IN_FLIGHT_AUTH[token]
         request.state.user = result
-        _AUTH_CACHE[token] = (result, now)
         return result
-    except Exception:
-        pass
 
-    # ── 2. REST API fallback (works without service account credentials) ──
+    # Create a Future to track this verification
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+    _IN_FLIGHT_AUTH[token] = fut
+
     try:
-        lookup = _firebase_request("accounts:lookup", {"idToken": token})
-        user = (lookup.get("users") or [{}])[0]
-        if not user:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown user.")
-        email = user.get("email", "")
-        result = {
-            "user_id": user.get("localId", "") or email,
-            "email": email,
-            "name": user.get("displayName") or (email.split("@")[0] if email else "User"),
-        }
-        request.state.user = result
+        result = await _verify_token_async(token)
         _AUTH_CACHE[token] = (result, now)
+        request.state.user = result
+        fut.set_result(result)
         return result
-    except HTTPException:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token.")
+    except Exception as e:
+        fut.set_exception(e)
+        raise e
+    finally:
+        _IN_FLIGHT_AUTH.pop(token, None)
 
 
 @router.get("/me", response_model=MeResponse)
-def me(user: dict[str, Any] = Depends(get_current_user)) -> MeResponse:
+async def me(user: dict[str, Any] = Depends(get_current_user)) -> MeResponse:
     return MeResponse(**user)
 
 

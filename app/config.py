@@ -91,6 +91,7 @@ class AppSettings(BaseModel):
     smtp_password: str | None = Field(default=None)
     smtp_from: str | None = Field(default=None)
     smtp_tls: bool = Field(default=True)
+    smtp_ssl: bool = Field(default=False)
 
     gcp_project_id: str | None = Field(default=None)
     gcp_location: str = Field(default="US")
@@ -208,6 +209,7 @@ class AppSettings(BaseModel):
             smtp_password=os.getenv("SMTP_PASSWORD") or None,
             smtp_from=os.getenv("SMTP_FROM") or None,
             smtp_tls=_env_bool("SMTP_TLS", "true"),
+            smtp_ssl=_env_bool("SMTP_SSL", "false"),
             gcp_project_id=os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT") or None,
             gcp_location=os.getenv("GCP_LOCATION", "US"),
             cache_enabled=_env_bool("CACHE_ENABLED", "true"),
