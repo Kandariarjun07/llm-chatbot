@@ -223,12 +223,38 @@ If you did not request this code, you can safely ignore this email.
         )
         return False
 
+    # Force IPv4 connection. Cloud hosts (Render, Fly, etc.) frequently
+    # have no IPv6 route, so the default `socket.create_connection` with
+    # AF_UNSPEC raises [Errno 101] Network is unreachable when the SMTP
+    # host resolves to an AAAA record first. Resolving AF_INET-only and
+    # connecting manually sidesteps this completely.
+    import socket as _socket
+
+    class _IPv4SMTP(smtplib.SMTP):
+        def _get_socket(self, host: str, port: int, timeout: float):
+            # Mirrors stdlib's behaviour but constrains to IPv4 addresses.
+            infos = _socket.getaddrinfo(
+                host, port, _socket.AF_INET, _socket.SOCK_STREAM
+            )
+            if not infos:
+                raise OSError(f"No IPv4 address resolved for {host!r}")
+            last_err: Exception | None = None
+            for family, socktype, proto, _canon, sockaddr in infos:
+                sock = _socket.socket(family, socktype, proto)
+                try:
+                    sock.settimeout(timeout)
+                    sock.connect(sockaddr)
+                    return sock
+                except OSError as e:
+                    last_err = e
+                    sock.close()
+            assert last_err is not None
+            raise last_err
+
     try:
+        server = _IPv4SMTP(host, settings.smtp_port, timeout=10)
         if settings.smtp_tls:
-            server = smtplib.SMTP(host, settings.smtp_port, timeout=10)
             server.starttls()
-        else:
-            server = smtplib.SMTP(host, settings.smtp_port, timeout=10)
         server.login(settings.smtp_user, settings.smtp_password)
         server.sendmail(sender, [to], msg_root.as_string())
         server.quit()
