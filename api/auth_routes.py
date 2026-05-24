@@ -304,9 +304,9 @@ If you did not request this code, you can safely ignore this email.
 
     try:
         if is_ssl:
-            server = _IPv4SMTP_SSL(host, settings.smtp_port, timeout=10)
+            server = _IPv4SMTP_SSL(host, settings.smtp_port, timeout=3)
         else:
-            server = _IPv4SMTP(host, settings.smtp_port, timeout=10)
+            server = _IPv4SMTP(host, settings.smtp_port, timeout=3)
             if settings.smtp_tls:
                 server.starttls()
         server.login(settings.smtp_user, settings.smtp_password)
