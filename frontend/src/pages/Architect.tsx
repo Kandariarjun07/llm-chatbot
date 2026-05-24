@@ -798,11 +798,12 @@ export default function Architect() {
               </button>
             </div>
 
-            <div className="h-4 w-px bg-[var(--border)] mx-1" />
+            <div className="h-4 w-px bg-[var(--border)] mx-1 hidden sm:block" />
 
+            {/* Align buttons - hidden on mobile to save space */}
             <button
               onClick={() => store.autoArrange('TD')}
-              className="px-2 py-1 text-xs rounded hover:bg-[var(--bg)] flex items-center gap-1 border"
+              className="hidden sm:flex px-2 py-1 text-xs rounded hover:bg-[var(--bg)] items-center gap-1 border"
               style={{ borderColor: 'var(--border)' }}
               title="Auto Layout Top-to-Bottom"
             >
@@ -810,7 +811,7 @@ export default function Architect() {
             </button>
             <button
               onClick={() => store.autoArrange('LR')}
-              className="px-2 py-1 text-xs rounded hover:bg-[var(--bg)] flex items-center gap-1 border"
+              className="hidden sm:flex px-2 py-1 text-xs rounded hover:bg-[var(--bg)] items-center gap-1 border"
               style={{ borderColor: 'var(--border)' }}
               title="Auto Layout Left-to-Right"
             >
@@ -831,15 +832,16 @@ export default function Architect() {
               <TrashSimple size={14} /> <span className="hidden sm:inline">Clear</span>
             </button>
 
-            <div className="h-4 w-px bg-[var(--border)] mx-1" />
-            
+            <div className="h-4 w-px bg-[var(--border)] mx-1 hidden sm:block" />
+
+            {/* Developer console - hidden on mobile to save space */}
             <button
               onClick={() => {
                 const val = !showDeveloperConsole;
                 setShowDeveloperConsole(val);
                 if (val) setBottomExpanded(true);
               }}
-              className={`p-1.5 rounded hover:bg-[var(--bg)] transition-colors ${showDeveloperConsole ? 'text-[var(--accent)] bg-[var(--bg)]' : 'text-[var(--text-muted)]'}`}
+              className={`hidden sm:block p-1.5 rounded hover:bg-[var(--bg)] transition-colors ${showDeveloperConsole ? 'text-[var(--accent)] bg-[var(--bg)]' : 'text-[var(--text-muted)]'}`}
               title="Toggle Developer Console"
             >
               <Terminal size={16} />
